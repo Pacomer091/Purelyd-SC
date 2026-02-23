@@ -1168,9 +1168,14 @@ function setupEventListeners() {
     playPauseBtn.onclick = togglePlay;
 
     progressBar.oninput = () => {
-        // All songs now play through audioElement
-        const time = (progressBar.value / 100) * audioElement.duration;
-        audioElement.currentTime = time;
+        const song = songs[currentSongIndex];
+        if (song.type === 'youtube') {
+            const time = (progressBar.value / 100) * ytPlayer.getDuration();
+            ytPlayer.seekTo(time, true);
+        } else {
+            const time = (progressBar.value / 100) * audioElement.duration;
+            audioElement.currentTime = time;
+        }
     };
 
     volumeSlider.oninput = () => {
@@ -1285,107 +1290,51 @@ async function playSong(index, resumeAtSeconds = 0) {
             return;
         }
 
-        // Innertube Direct Audio Extraction (no ads)
-        setStatus("FETCHING STREAM: " + videoId);
-        playPauseBtn.textContent = "⏸";
-        userWantsToPlay = true;
-        updateMediaSession(song);
-        if ("mediaSession" in navigator) {
-            navigator.mediaSession.playbackState = "playing";
-        }
+        // Foreground play mode enabled.
+        if (ytReady) {
+            setStatus(`PLAYING YT: ${videoId}`);
 
-        const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
-        const CORS_PROXY = "https://corsproxy.io/?url=";
-        const clients = [
-            { name: "ANDROID", version: "19.09.37", sdk: 30 },
-            { name: "WEB", version: "2.20240313.05.00" }
-        ];
-
-        let streamFound = false;
-        for (const client of clients) {
-            if (streamFound) break;
-            try {
-                setStatus("TRYING " + client.name + " CLIENT...");
-                const body = {
-                    videoId: videoId,
-                    context: {
-                        client: {
-                            clientName: client.name,
-                            clientVersion: client.version,
-                            ...(client.sdk ? { androidSdkVersion: client.sdk } : {}),
-                            hl: "en", gl: "US"
-                        }
-                    }
-                };
-
-                const apiUrl = "https://music.youtube.com/youtubei/v1/player?key=" + INNERTUBE_KEY;
-                const response = await fetch(
-                    CORS_PROXY + encodeURIComponent(apiUrl),
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(body),
-                        signal: AbortSignal.timeout(10000)
-                    }
-                );
-
-                if (!response.ok) {
-                    console.warn("Innertube " + client.name + " returned " + response.status);
-                    continue;
-                }
-
-                const data = await response.json();
-
-                if (data.playabilityStatus?.status !== "OK") {
-                    setStatus("YT STATUS: " + (data.playabilityStatus?.status || "UNKNOWN"));
-                    continue;
-                }
-
-                const formats = data.streamingData?.adaptiveFormats || [];
-                const audioFormats = formats
-                    .filter(f => f.mimeType && f.mimeType.startsWith("audio/") && f.url)
-                    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-
-                if (audioFormats.length > 0) {
-                    const best = audioFormats[0];
-                    const kbps = Math.round(best.bitrate / 1000);
-                    setStatus("STREAM: " + kbps + "kbps");
-
-                    audioElement.src = best.url;
-                    audioElement.play().then(() => {
-                        isPlaying = true;
-                        userWantsToPlay = true;
-                        if (resumeAtSeconds > 0) {
-                            audioElement.currentTime = resumeAtSeconds;
-                        }
-                        setStatus("PLAYING (" + kbps + "kbps)");
-                        if ("mediaSession" in navigator) {
-                            updateMediaSession(song);
-                            navigator.mediaSession.playbackState = "playing";
-                        }
-                        updateMediaSessionPositionState();
-                        startKeepAlive();
-                    }).catch(e => {
-                        setStatus("PLAY ERROR: " + e.message);
-                        console.error("Stream playback error:", e);
+            // Resilience 13.0: Hard State Reset
+            // 1. Scrub previous state to prevent "Sticky Timestamp" bug
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "none";
+                try {
+                    // Force a zero-state to bridge the gap
+                    navigator.mediaSession.setPositionState({
+                        duration: 120, // Dummy
+                        playbackRate: 0,
+                        position: 0
                     });
-
-                    streamFound = true;
-                } else {
-                    setStatus("NO AUDIO IN RESPONSE");
-                }
-            } catch (e) {
-                console.warn("Innertube " + client.name + " failed:", e.message);
-                setStatus(client.name + " FAILED: " + e.message.substring(0, 30));
-                continue;
+                } catch (e) { }
             }
-        }
+            lastProgressSyncSec = -1;
 
-        if (!streamFound) {
-            setStatus("EXTRACTION FAILED - SKIPPING");
-            setTimeout(() => nextSong(), 2000);
+            // 2. Warm up web audio stack synchronously
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') audioContext.resume();
+
+            // 3. Warm up MediaSession with REAL metadata immediately
+            updateMediaSession(song);
+            navigator.mediaSession.playbackState = "playing";
+
+            // 4. Load YouTube (Primary Focus Hunter)
+            if (song.type === 'youtube') kickstartYouTubeVisibility();
+            if (resumeAtSeconds > 0) {
+                ytPlayer.loadVideoById({ videoId: videoId, startSeconds: resumeAtSeconds });
+                console.log(`Resuming at ${resumeAtSeconds}s`);
+            } else {
+                ytPlayer.loadVideoById(videoId);
+            }
+            userWantsToPlay = true;
+            isPlaying = false; // Defer to onPlayerStateChange
+            playPauseBtn.textContent = '⏸';
+        } else {
+            setStatus("WAITING FOR YT PLAYER...");
+            pendingSongId = videoId;
+            userWantsToPlay = true;
+            isPlaying = true;
+            playPauseBtn.textContent = '⏸';
         }
-        isPlaying = false;
     } else {
         setStatus("PLAYING AUDIO FILE");
         audioElement.src = song.url;
@@ -1521,12 +1470,22 @@ function updateMediaSessionPositionState() {
 }
 
 function seekRelative(offset) {
-    audioElement.currentTime += offset;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube' && ytReady) {
+        ytPlayer.seekTo(ytPlayer.getCurrentTime() + offset, true);
+    } else {
+        audioElement.currentTime += offset;
+    }
     updateMediaSessionPositionState();
 }
 
 function seekToTime(time) {
-    audioElement.currentTime = time;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube' && ytReady) {
+        ytPlayer.seekTo(time, true);
+    } else {
+        audioElement.currentTime = time;
+    }
 }
 
 // Background Keep-Alive Logic
@@ -1615,17 +1574,26 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function togglePlay() {
-    // All songs now play through audioElement (Innertube for YT, direct for audio files)
-    // ytPlayer is only used for the background bridge
-    if (audioElement.paused) {
-        audioElement.play();
-        userWantsToPlay = true;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube') {
+        const state = ytPlayer.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+            ytPlayer.pauseVideo();
+            userWantsToPlay = false;
+        } else {
+            ytPlayer.playVideo();
+            userWantsToPlay = true;
+        }
     } else {
-        audioElement.pause();
-        userWantsToPlay = false;
+        if (audioElement.paused) {
+            audioElement.play();
+            userWantsToPlay = true;
+        } else {
+            audioElement.pause();
+            userWantsToPlay = false;
+        }
     }
 }
-
 
 function updateProgress() {
     const song = songs[currentSongIndex];
@@ -1633,14 +1601,13 @@ function updateProgress() {
 
     let current, duration;
 
-    if (pendingKickstartIndex !== null) {
-        // Bridge is playing via ytPlayer
+    if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
         if (ytReady && ytPlayer.getDuration) {
             current = ytPlayer.getCurrentTime();
-            duration = 3;
+            // Hardcode bridge duration to 3s
+            duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
         }
-    } else {
-        // All songs play through audioElement
+    } else if (song && song.type === 'audio') {
         current = audioElement.currentTime;
         duration = audioElement.duration;
     }
@@ -1651,8 +1618,10 @@ function updateProgress() {
         currentTimeEl.textContent = formatTime(current);
         totalTimeEl.textContent = formatTime(duration);
 
+        // Resilience 13.0: Smooth & Stable Progress Sync
         const currentSec = Math.floor(current);
-        if (isPlaying && currentSec % 5 === 0) {
+        if (isPlaying && (song.type === 'youtube' || currentSec % 5 === 0)) {
+            // Jitter Guard: Only sync with OS if we haven't synced this specific second yet
             if (lastProgressSyncSec !== currentSec) {
                 updateMediaSessionPositionState();
                 lastProgressSyncSec = currentSec;
