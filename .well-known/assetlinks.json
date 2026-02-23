@@ -1,0 +1,14 @@
+[
+    {
+        "relation": [
+            "delegate_permission/common.handle_all_urls"
+        ],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.purelyd.music",
+            "sha256_cert_fingerprints": [
+                "8B:3E:E3:97:7C:A2:D4:D0:BB:45:56:DA:8D:71:54:EF:A8:78:E5:8D:C5:B9:FB:92:8D:DE:13:BE:77:94:5E:D9"
+            ]
+        }
+    }
+]

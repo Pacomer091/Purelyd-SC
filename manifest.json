@@ -1,0 +1,16 @@
+{
+  "name": "Purelyd Music",
+  "short_name": "Purelyd",
+  "description": "Your Music, Your Way.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#ff0033",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/512/music.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

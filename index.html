@@ -1,0 +1,304 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Purelyd Music - YouTube Music Clone</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ff0033">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Purelyd">
+    <link rel="apple-touch-icon" href="https://img.icons8.com/color/512/music.png">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body class="dark-theme">
+    <div class="app-container">
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div id="debug-console"
+                style="position: absolute; top:0; left:0; width: 100%; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.9); color: #00ff00; font-family: monospace; font-size: 10px; z-index: 10000; pointer-events: none; padding: 5px; border-bottom: 1px solid #00ff00;">
+                DEBUG READY
+            </div>
+            <div class="logo">
+                <svg viewBox="0 0 100 100" class="logo-svg">
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#ff0033;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#cc002c;stop-opacity:1" />
+                        </linearGradient>
+                        <filter id="logo-glow">
+                            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+                            <feMerge>
+                                <feMergeNode in="coloredBlur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <circle cx="50" cy="50" r="45" stroke="url(#logo-gradient)" stroke-width="1.5" fill="none"
+                        opacity="0.3" />
+                    <path d="M40 30V70M40 30H60C70 30 70 50 60 50H40" stroke="url(#logo-gradient)" stroke-width="8"
+                        stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#logo-glow)" />
+                </svg>
+                <span class="logo-text">Purelyd</span>
+            </div>
+            <nav class="nav-links">
+                <a href="#" class="active" id="nav-home"><i class="icon-home"></i> Home</a>
+                <a href="#" id="nav-favorites"><i class="icon-heart"></i> Favorites</a>
+                <a href="#" id="nav-uploads"><i class="icon-library"></i> Subido por m├¡</a>
+            </nav>
+            <div class="playlists-section">
+                <button id="add-song-btn" class="btn-new-playlist" style="margin-bottom: 12px;">+ Add Song</button>
+                <button id="bulk-import-btn" class="btn-new-playlist"
+                    style="margin-bottom: 12px; background: rgba(52, 152, 219, 0.1); border-color: rgba(52, 152, 219, 0.3);">Ô¼ç
+                    Bulk Import</button>
+                <button id="new-playlist-btn" class="btn-new-playlist" style="background: rgba(255,255,255,0.05);">+ New
+                    Playlist</button>
+                <div id="playlist-items" style="margin-top: 20px; display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Playlist list goes here -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-container">
+                    <button id="menu-toggle" class="mobile-menu-btn"
+                        style="display: none; background: none; border: none; font-size: 24px; color: white; cursor: pointer; margin-right: 15px;">Ôÿ░</button>
+                    <input type="text" id="search-input" placeholder="Search songs, artists, albums">
+                </div>
+                <div class="user-profile" id="user-profile-btn">
+                    <span id="login-status-text">Log In</span>
+                    <div class="avatar" id="user-avatar">?</div>
+                    <div id="user-menu" class="user-menu">
+                        <div class="menu-item" id="logout-btn">Logout</div>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content-area">
+                <div class="view-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h1>Welcome back</h1>
+                    <button id="toggle-select-mode" class="btn-new-playlist"
+                        style="width: auto; padding: 8px 16px; margin: 0; display: none;">Seleccionar</button>
+                </div>
+                <div id="song-grid" class="song-grid">
+                    <!-- Songs will be injected here -->
+                </div>
+            </section>
+
+            <!-- Multi-Action Bar -->
+            <div id="multi-action-bar" class="multi-action-bar">
+                <div class="selected-count">0 seleccionados</div>
+                <div class="bar-actions">
+                    <button id="bulk-fav-btn">Favorito ÔØñ´©Å</button>
+                    <button id="bulk-playlist-btn">A├▒adir a Playlist Ô×ò</button>
+                    <button id="bulk-delete-btn" class="delete">Eliminar ­ƒùæ´©Å</button>
+                    <button id="cancel-select-btn" class="cancel">Cancelar</button>
+                </div>
+            </div>
+
+            <!-- Mobile Bottom Nav -->
+            <nav class="mobile-bottom-nav">
+                <div class="nav-item" id="mobile-nav-home">
+                    <span class="nav-icon">­ƒÅá</span>
+                    <span class="nav-label">Inicio</span>
+                </div>
+                <div class="nav-item nav-add" id="mobile-nav-add">
+                    <span class="nav-icon">+</span>
+                </div>
+                <div class="nav-item" id="mobile-nav-library">
+                    <span class="nav-icon">­ƒôÜ</span>
+                    <span class="nav-label">Biblioteca</span>
+                </div>
+            </nav>
+
+            <!-- Navigation Overlays -->
+            <div id="mobile-add-overlay" class="nav-sheet">
+                <div class="sheet-content">
+                    <div class="sheet-header">Agregar</div>
+                    <div class="sheet-item" id="mob-add-song">Ô×ò A├▒adir Canci├│n</div>
+                    <div class="sheet-item" id="mob-bulk-import">Ô¼ç Importaci├│n Masiva</div>
+                    <div class="sheet-item" id="mob-new-playlist">­ƒåò Nueva Playlist</div>
+                    <button class="sheet-close">Cerrar</button>
+                </div>
+            </div>
+
+            <div id="mobile-library-overlay" class="nav-sheet">
+                <div class="sheet-content">
+                    <div class="sheet-header">Mi Biblioteca</div>
+                    <div class="sheet-item" id="mob-nav-uploads">­ƒôñ Subido por m├¡</div>
+                    <div class="sheet-item" id="mob-nav-favorites">ÔØñ´©Å Mis Favoritos</div>
+                    <div class="sheet-item" id="mob-nav-playlists">­ƒôü Mis Playlists</div>
+                    <button class="sheet-close">Cerrar</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Player Bar -->
+        <footer class="player-bar">
+            <div class="player-song-info">
+                <div class="player-cover"></div>
+                <div class="player-text">
+                    <div class="song-name">Nothing playing</div>
+                    <div class="artist-name">Select a song</div>
+                    <div id="player-status" style="font-size: 10px; color: var(--accent-red); margin-top: 4px;">Player:
+                        IDLE</div>
+                </div>
+            </div>
+
+            <div class="player-controls">
+                <div class="buttons">
+                    <button id="prev-btn">ÔÅ«</button>
+                    <button id="play-pause-btn">ÔûÂ</button>
+                    <button id="next-btn">ÔÅ¡</button>
+                </div>
+                <div class="progress-container">
+                    <span class="current-time">0:00</span>
+                    <input type="range" id="progress-bar" value="0" min="0" max="100">
+                    <span class="total-time">0:00</span>
+                </div>
+            </div>
+
+            <div class="player-extra">
+                <button id="volume-btn">­ƒöè</button>
+                <input type="range" id="volume-slider" min="0" max="100" value="80">
+            </div>
+        </footer>
+    </div>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="auth-title">Log In</h2>
+            <form id="auth-form">
+                <input type="text" id="auth-username" placeholder="Username" required>
+                <input type="email" id="auth-email" placeholder="Email" style="display: none;">
+                <input type="password" id="auth-password" placeholder="Password" required>
+                <input type="password" id="auth-confirm-password" placeholder="Confirm Password" style="display: none;">
+                <div class="modal-actions">
+                    <button type="button" id="close-auth">Cancel</button>
+                    <button type="submit" id="auth-submit">Log In</button>
+                </div>
+            </form>
+            <p id="auth-switch" class="auth-switch">Don't have an account? <span>Register</span></p>
+        </div>
+    </div>
+
+    <!-- Genre Selection Overlay -->
+    <div id="genre-modal" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <h2>Choose your favorite genres</h2>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 24px;">Select up to 3 genres to
+                personalize your experience.</p>
+            <div id="genre-grid" class="genre-grid">
+                <!-- Genres like Rock, Pop, etc. will be here -->
+            </div>
+            <div class="modal-actions" style="margin-top: 30px;">
+                <button id="save-genres" class="btn-new-playlist"
+                    style="background: var(--accent-red);">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Song Modal -->
+    <div id="add-song-modal" class="modal">
+        <div class="modal-content">
+            <h2>Add New Song</h2>
+            <form id="add-song-form">
+                <input type="text" id="song-title" placeholder="T├¡tulo (ej: Blinding Lights)" required>
+                <input type="text" id="song-artist" placeholder="Artista (ej: The Weeknd)" required>
+                <input type="url" id="song-url" placeholder="Enlace de YouTube o MP3" required>
+                <input type="url" id="song-cover" placeholder="Miniatura (opcional)">
+                <div class="modal-actions">
+                    <button type="button" id="close-modal">Cancel</button>
+                    <button type="submit">Add Song</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Import Modal -->
+    <div id="bulk-import-modal" class="modal">
+        <div class="modal-content" style="width: 600px;">
+            <h2>Bulk Import Songs</h2>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 15px;">Paste YouTube URLs or
+                YouTube Music links (one per line).</p>
+            <textarea id="bulk-urls"
+                placeholder="https://www.youtube.com/watch?v=...&#10;https://music.youtube.com/watch?v=..."
+                style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: white; border-radius: 8px; padding: 12px; font-family: monospace; resize: none; margin-bottom: 15px;"></textarea>
+
+            <div id="import-status"
+                style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <div id="import-progress-text" style="font-size: 14px; margin-bottom: 8px;">Processing...</div>
+                <div
+                    style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                    <div id="import-progress-bar"
+                        style="width: 0%; height: 100%; background: var(--accent-red); transition: width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" id="close-bulk-modal">Cancel</button>
+                <button type="button" id="start-bulk-import" style="background: var(--accent-red); color: white;">Start
+                    Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Playlist Modal -->
+    <div id="playlist-modal" class="modal">
+        <div class="modal-content">
+            <h2>Create New Playlist</h2>
+            <form id="playlist-form">
+                <input type="text" id="playlist-name" placeholder="Playlist Name (e.g. My Favorites)" required>
+                <div class="modal-actions">
+                    <button type="button" id="close-playlist-modal">Cancel</button>
+                    <button type="submit">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add to Playlist Selection Modal -->
+    <div id="add-to-playlist-modal" class="modal">
+        <div class="modal-content">
+            <h2>Add to Playlist</h2>
+            <div id="playlist-selector-list" style="margin-top: 20px; max-height: 300px; overflow-y: auto;">
+                <!-- User playlists will be loaded here -->
+            </div>
+            <div class="modal-actions" style="margin-top: 20px;">
+                <button type="button" id="close-add-to-playlist">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <audio id="audio-element"></audio>
+    <audio id="silent-audio" loop style="display:none;"></audio>
+    <div id="youtube-player"
+        style="position: fixed; bottom: 80px; right: 10px; width: 160px; height: 90px; z-index: 1000; pointer-events: none; border-radius: 8px; overflow: hidden; opacity: 0.8;"
+        allow="autoplay; encrypted-media">
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <div class="context-menu-item" id="menu-play">Reproducir</div>
+        <div class="context-menu-item" id="menu-add-playlist">A├▒adir a Playlist</div>
+        <div class="context-menu-item" id="menu-favorite">Mark/Unmark Favorite</div>
+        <div class="context-menu-item" id="menu-edit">Editar</div>
+        <div class="context-menu-item delete" id="menu-delete">Eliminar</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="db.js"></script>
+    <script src="main.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+
+</html>
