@@ -1129,7 +1129,7 @@ async function playSong(index) {
             pendingKickstartIndex = index;
 
             // UI Instructions - Explicit overwrite
-            const bridgeTitle = String.fromCodePoint(0x26A0) + " Pulsa " + String.fromCodePoint(0x23ED) + " para empezar";
+            const bridgeTitle = String.fromCodePoint(0x25B6) + " / " + String.fromCodePoint(0x23ED) + " PULSA PLAY O SIGUIENTE";
             const bridgeArtist = "Sincronizando permisos de audio...";
 
             document.querySelector('.player-song-info .song-name').textContent = bridgeTitle;
@@ -1137,7 +1137,7 @@ async function playSong(index) {
             document.querySelector('.player-cover').style.backgroundImage = 'none';
             document.querySelector('.player-cover').style.backgroundColor = '#1a1a1a';
 
-            setStatus("ESPERANDO GESTO (Pulsa Siguiente)");
+            setStatus("ESPERANDO LLAVE (Play o Siguiente)");
 
             // Prime the audio engine
             audioElement.src = SILENT_TRACK_FILE;
@@ -1145,7 +1145,7 @@ async function playSong(index) {
                 console.warn("Autoplay block (Expected)");
             });
 
-            // MediaSession instructions
+            // MediaSession instructions - LOCKED until interaction
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: bridgeTitle,
@@ -1215,7 +1215,7 @@ async function playSong(index) {
 }
 
 function updateMediaSession(song) {
-    if (!('mediaSession' in navigator)) return;
+    if (!('mediaSession' in navigator) || pendingKickstartIndex !== null) return;
 
     navigator.mediaSession.metadata = new MediaMetadata({
         title: song.title,
@@ -1237,6 +1237,10 @@ function initMediaSessionHandlers() {
     const handlers = {
         'play': () => {
             // Hardware-Direct Play
+            if (pendingKickstartIndex !== null) {
+                nextSong();
+                return;
+            }
             userWantsToPlay = true;
             startKeepAlive();
             const song = songs[currentSongIndex];
