@@ -35,7 +35,7 @@ let userWantsToPlay = false; // Persistent state for background bypass
 let pendingKickstartIndex = null;
 let keepAliveOsc = null;
 const SILENT_TRACK_FILE = "silent_keepalive.mp3";
-const BRIDGE_YOUTUBE_ID = "M6ebXdNyLnY";
+const BRIDGE_YOUTUBE_ID = "KgUo_fR73yY";
 
 // DOM Elements
 const songGrid = document.getElementById('song-grid');
@@ -1298,8 +1298,7 @@ function updateMediaSessionPositionState() {
         // Force YouTube stats if bridge is active
         if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
             if (ytReady && ytPlayer.getDuration) {
-                // Hardcode bridge duration to 3s to bypass metadata lag bug
-                duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
+                duration = ytPlayer.getDuration();
                 currentTime = ytPlayer.getCurrentTime();
                 try { rate = ytPlayer.getPlaybackRate() || 1; } catch (e) { }
             }
@@ -1388,7 +1387,7 @@ document.addEventListener('visibilitychange', () => {
             ytPlayer.playVideo();
 
             if ('mediaSession' in navigator) {
-                const bridgeTitle = "Cargando...";
+                const bridgeTitle = String.fromCodePoint(0x25B6) + " / " + String.fromCodePoint(0x23ED) + " PULSA PLAY PARA RESUMIR";
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: bridgeTitle,
                     artist: "Sincronizando modo segundo plano...",
@@ -1444,8 +1443,7 @@ function updateProgress() {
     if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
         if (ytReady && ytPlayer.getDuration) {
             current = ytPlayer.getCurrentTime();
-            // Hardcode bridge duration to 3s
-            duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
+            duration = ytPlayer.getDuration();
         }
     } else if (song && song.type === 'audio') {
         current = audioElement.currentTime;
