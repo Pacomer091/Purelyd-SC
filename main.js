@@ -1,4 +1,4 @@
-const DEFAULT_SONGS = [
+﻿const DEFAULT_SONGS = [
     {
         id: 1,
         title: "Welcome to Purelyd",
@@ -182,7 +182,7 @@ function onPlayerError(e) {
     console.error("YouTube Player Error:", e.data);
 
     if (e.data === 101 || e.data === 150) {
-        alert("Este vídeo tiene desactivada la reproducción en otras webs. Prueba con otro enlace.");
+        alert("Este vÃ­deo tiene desactivada la reproducciÃ³n en otras webs. Prueba con otro enlace.");
     }
 }
 
@@ -202,7 +202,7 @@ function onPlayerStateChange(event) {
     } else if (event.data === YT.PlayerState.PLAYING) {
         isPlaying = true;
         userWantsToPlay = true;
-        playPauseBtn.textContent = '⏸';
+        playPauseBtn.textContent = 'â¸';
         if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = "playing";
             // Authoritative metadata sync only when actually playing
@@ -301,12 +301,12 @@ async function migrateToCloud() {
                     await SongDB.addSong(song, song.username || 'invitado');
                     count++;
                 } catch (err) {
-                    console.error("Error migrando canción:", song.title, err);
+                    console.error("Error migrando canciÃ³n:", song.title, err);
                 }
             }
 
             localStorage.setItem('purelyd-cloud-migrated', 'true');
-            alert(`¡Migración completada! Se han subido ${count} canciones a la nube.`);
+            alert(`Â¡MigraciÃ³n completada! Se han subido ${count} canciones a la nube.`);
             window.location.reload(); // Reload to show new data
         };
     } catch (e) {
@@ -375,7 +375,7 @@ function renderPlaylists() {
     if (!playlistItemsContainer) return;
     playlistItemsContainer.innerHTML = playlists.map(p => `
         <div class="playlist-item ${currentPlaylistId === p.id ? 'active' : ''}" data-id="${p.id}">
-            <span>📁</span> ${p.name}
+            <span>ðŸ“</span> ${p.name}
         </div>
     `).join('');
 
@@ -408,7 +408,7 @@ function renderSongs() {
     const mainHeading = document.querySelector('.content-area h1');
     if (mainHeading) {
         if (currentPlaylistId === 'favorites') mainHeading.textContent = 'My Favorites';
-        else if (currentPlaylistId === 'uploads') mainHeading.textContent = 'Subido por mí';
+        else if (currentPlaylistId === 'uploads') mainHeading.textContent = 'Subido por mÃ­';
         else if (currentPlaylistId) {
             const p = playlists.find(p => p.id === currentPlaylistId);
             mainHeading.textContent = p ? p.name : 'Playlist';
@@ -432,7 +432,7 @@ function renderSongs() {
         const realIndex = songs.findIndex(s => s.id === song.id);
         return `
         <div class="song-card ${isSelected ? 'selected' : ''}" data-index="${realIndex}">
-            ${!isSelectMode ? `<button class="options-btn" data-index="${realIndex}">⋮</button>` : ''}
+            ${!isSelectMode ? `<button class="options-btn" data-index="${realIndex}">â‹®</button>` : ''}
             ${isFav ? `
                 <div class="fav-badge">
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1083,10 +1083,10 @@ function setupEventListeners() {
 // Utility to export all songs for GitHub deployment
 async function exportAllSongs() {
     const allSongs = await SongDB.getAllSongs();
-    console.log("--- COPIA ESTO Y PÁSAMELO ---");
+    console.log("--- COPIA ESTO Y PÁSAME ---");
     console.log(JSON.stringify(allSongs, null, 2));
     console.log("-------------------------------");
-    alert("Lista de canciones exportada a la consola (F12). Cópiamela para incluirla en el despliegue.");
+    alert("Lista de canciones exportada a la consola (F12). Copiamela para incluirla en el despliegue.");
 }
 
 async function playSong(index) {
@@ -1435,7 +1435,7 @@ function showMenu(event, index) {
     // Update Favorite text dynamically
     if (currentUser && songs[index]) {
         const isFav = (currentUser.favorites || []).includes(songs[index].id);
-        menuFavorite.textContent = isFav ? "Quitar de Favoritos" : "Añadir a Favoritos";
+        menuFavorite.textContent = isFav ? "Quitar de Favoritos ❤️" : "Añadir a Favoritos";
     }
 
     // Calculate position
