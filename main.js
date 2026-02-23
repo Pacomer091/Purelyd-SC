@@ -510,9 +510,10 @@ function renderSongs() {
         toggleSelectBtn.style.display = 'none';
         if (isSelectMode) exitSelectMode();
 
-        // RECOMMENDED: Show 5 random songs
-        if (songs.length > 0) {
-            const shuffled = [...songs].sort(() => Math.random() - 0.5).slice(0, 5);
+        // RECOMMENDED: Show 5 random songs uploaded by current user
+        const userSongs = currentUser ? songs.filter(s => s.username === currentUser.username) : [];
+        if (userSongs.length > 0) {
+            const shuffled = [...userSongs].sort(() => Math.random() - 0.5).slice(0, 5);
             const recoHTML = shuffled.map(song => {
                 const realIndex = songs.findIndex(s => s.id === song.id);
                 return `
