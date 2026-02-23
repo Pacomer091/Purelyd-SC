@@ -1,4 +1,4 @@
-﻿const DEFAULT_SONGS = [
+const DEFAULT_SONGS = [
     {
         id: 1,
         title: "Welcome to Purelyd",
@@ -459,6 +459,16 @@ function renderSongs() {
 
     // HOME VIEW: Show action cards instead of all songs
     if (!currentPlaylistId && !searchTerm) {
+        const playlistCards = playlists.map(p => `
+            <div class="song-card home-action-card home-playlist-card" data-playlist-id="${p.id}" style="cursor:pointer;">
+                <div class="song-cover" style="background: linear-gradient(135deg, #6C3483, #A569BD); display:flex; align-items:center; justify-content:center; font-size:2.5rem;">🎵</div>
+                <div class="song-info">
+                    <div class="song-title" style="font-size:1rem; font-weight:700;">${p.name}</div>
+                    <div class="song-artist">${(p.song_ids || []).length} canciones</div>
+                </div>
+            </div>
+        `).join('');
+
         songGrid.innerHTML = `
             <div class="song-card home-action-card" id="home-random" style="cursor:pointer;">
                 <div class="song-cover" style="background: linear-gradient(135deg, #1DB954, #1ed760); display:flex; align-items:center; justify-content:center; font-size:3rem;">🎲</div>
@@ -467,13 +477,7 @@ function renderSongs() {
                     <div class="song-artist">Sorpréndete</div>
                 </div>
             </div>
-            <div class="song-card home-action-card" id="home-playlists" style="cursor:pointer;">
-                <div class="song-cover" style="background: linear-gradient(135deg, #ff0033, #ff6b6b); display:flex; align-items:center; justify-content:center; font-size:3rem;">📁</div>
-                <div class="song-info">
-                    <div class="song-title" style="font-size:1rem; font-weight:700;">Mis Playlists</div>
-                    <div class="song-artist">${playlists.length} playlists</div>
-                </div>
-            </div>
+
             <div class="song-card home-action-card" id="home-favorites" style="cursor:pointer;">
                 <div class="song-cover" style="background: linear-gradient(135deg, #e91e63, #f06292); display:flex; align-items:center; justify-content:center; font-size:3rem;">❤️</div>
                 <div class="song-info">
@@ -481,15 +485,25 @@ function renderSongs() {
                     <div class="song-artist">Tus canciones favoritas</div>
                 </div>
             </div>
+            ${playlistCards}
         `;
         document.getElementById('home-random').onclick = () => {
             if (songs.length === 0) return;
             const randomIndex = Math.floor(Math.random() * songs.length);
             playSong(randomIndex);
         };
-        document.getElementById('home-playlists').onclick = () => {
-            if (mobNavPlaylists) mobNavPlaylists.click();
-        };
+        // Wire up each playlist card on home
+        document.querySelectorAll('.home-playlist-card').forEach(card => {
+            card.onclick = async () => {
+                currentPlaylistId = parseInt(card.dataset.playlistId);
+                navHome.classList.remove('active');
+                navUploads.classList.remove('active');
+                navFavorites.classList.remove('active');
+                await loadUserSongs();
+                renderSongs();
+                renderPlaylists();
+            };
+        });
         document.getElementById('home-favorites').onclick = () => {
             if (navFavorites) navFavorites.click();
         };
