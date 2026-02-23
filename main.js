@@ -1296,7 +1296,8 @@ function updateMediaSessionPositionState() {
         // Force YouTube stats if bridge is active
         if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
             if (ytReady && ytPlayer.getDuration) {
-                duration = ytPlayer.getDuration();
+                // Hardcode bridge duration to 3s to bypass metadata lag bug
+                duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
                 currentTime = ytPlayer.getCurrentTime();
                 try { rate = ytPlayer.getPlaybackRate() || 1; } catch (e) { }
             }
@@ -1441,7 +1442,8 @@ function updateProgress() {
     if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
         if (ytReady && ytPlayer.getDuration) {
             current = ytPlayer.getCurrentTime();
-            duration = ytPlayer.getDuration();
+            // Hardcode bridge duration to 3s
+            duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
         }
     } else if (song && song.type === 'audio') {
         current = audioElement.currentTime;
