@@ -33,6 +33,7 @@ let isSelectMode = false;
 let selectedSongIds = [];
 let userWantsToPlay = false; // Persistent state for background bypass
 let pendingKickstartIndex = null;
+let pendingResumeTime = 0; // Save playback position for background resume
 let keepAliveOsc = null;
 const SILENT_TRACK_FILE = "silent_keepalive.mp3";
 const BRIDGE_YOUTUBE_ID = "KgUo_fR73yY";
@@ -241,8 +242,10 @@ function nextSong() {
     console.log("nextSong() called. Pending:", pendingKickstartIndex);
     if (pendingKickstartIndex !== null) {
         const target = pendingKickstartIndex;
+        const resumeAt = pendingResumeTime;
         pendingKickstartIndex = null;
-        playSong(target);
+        pendingResumeTime = 0;
+        playSong(target, resumeAt);
         return;
     }
     let nextIndex = (currentSongIndex + 1) % songs.length;
@@ -1124,7 +1127,7 @@ async function exportAllSongs() {
     alert("Lista de canciones exportada a la consola (F12). Copiamela para incluirla en el despliegue.");
 }
 
-async function playSong(index) {
+async function playSong(index, resumeAtSeconds = 0) {
     currentSongIndex = index;
     const song = songs[index];
     if (!song) return;
@@ -1176,7 +1179,12 @@ async function playSong(index) {
 
             // 4. Load YouTube (Primary Focus Hunter)
             if (song.type === 'youtube') kickstartYouTubeVisibility();
-            ytPlayer.loadVideoById(videoId);
+            if (resumeAtSeconds > 0) {
+                ytPlayer.loadVideoById({ videoId: videoId, startSeconds: resumeAtSeconds });
+                console.log(`Resuming at ${resumeAtSeconds}s`);
+            } else {
+                ytPlayer.loadVideoById(videoId);
+            }
             userWantsToPlay = true;
             isPlaying = false; // Defer to onPlayerStateChange
             playPauseBtn.textContent = '⏸';
@@ -1380,7 +1388,9 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         const song = songs[currentSongIndex];
         if (isPlaying && song && song.type === 'youtube' && ytReady) {
-            // Store current state for bridge resume
+            // Store current state and timestamp for bridge resume
+            pendingResumeTime = ytPlayer.getCurrentTime() || 0;
+            console.log(`Saving resume time: ${pendingResumeTime}s`);
             pendingKickstartIndex = currentSongIndex;
             ytPlayer.loadVideoById(BRIDGE_YOUTUBE_ID);
             ytPlayer.playVideo();
