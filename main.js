@@ -34,6 +34,7 @@ let selectedSongIds = [];
 let userWantsToPlay = false; // Persistent state for background bypass
 let pendingKickstartIndex = null;
 let pendingResumeTime = 0; // Save playback position for background resume
+let bridgeTimeout = null; // Safety timer for auto-resume
 let keepAliveOsc = null;
 const SILENT_TRACK_FILE = "silent_keepalive.mp3";
 const BRIDGE_YOUTUBE_ID = "KgUo_fR73yY";
@@ -245,6 +246,7 @@ function nextSong() {
         const resumeAt = pendingResumeTime;
         pendingKickstartIndex = null;
         pendingResumeTime = 0;
+        if (bridgeTimeout) { clearTimeout(bridgeTimeout); bridgeTimeout = null; }
         playSong(target, resumeAt);
         return;
     }
@@ -1407,6 +1409,15 @@ document.addEventListener('visibilitychange', () => {
                     artwork: [{ src: "https://img.youtube.com/vi/" + BRIDGE_YOUTUBE_ID + "/maxresdefault.jpg", sizes: "512x512", type: "image/png" }]
                 });
             }
+
+            // Safety timeout: auto-resume after 4s in case ENDED event doesn't fire
+            if (bridgeTimeout) clearTimeout(bridgeTimeout);
+            bridgeTimeout = setTimeout(() => {
+                if (pendingKickstartIndex !== null) {
+                    console.log("Bridge safety timeout: forcing resume");
+                    nextSong();
+                }
+            }, 4000);
         }
     } else {
         const song = songs[currentSongIndex];
