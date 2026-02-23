@@ -200,9 +200,15 @@ function onPlayerStateChange(event) {
         [YT.PlayerState.CUED]: "CUED"
     };
     setStatus(states[event.data] || "UNKNOWN");
+    console.log(`[YT State] ${states[event.data]}`);
 
     if (event.data === YT.PlayerState.ENDED) {
-        nextSong();
+        if (pendingKickstartIndex !== null) {
+            console.log("Bridge ended, resuming original song...");
+            nextSong();
+        } else {
+            nextSong();
+        }
     } else if (event.data === YT.PlayerState.PLAYING) {
         isPlaying = true;
         userWantsToPlay = true;
@@ -227,6 +233,7 @@ function onPlayerStateChange(event) {
 }
 
 function nextSong() {
+    console.log("nextSong() called. Pending:", pendingKickstartIndex);
     if (pendingKickstartIndex !== null) {
         const target = pendingKickstartIndex;
         pendingKickstartIndex = null;
@@ -235,6 +242,18 @@ function nextSong() {
     }
     let nextIndex = (currentSongIndex + 1) % songs.length;
     playSong(nextIndex);
+}
+
+function kickstartYouTubeVisibility() {
+    const iframe = document.getElementById('youtube-player');
+    if (!iframe) return;
+    iframe.style.opacity = "1";
+    iframe.style.zIndex = "10001";
+    iframe.focus();
+    setTimeout(() => {
+        iframe.style.opacity = "0.8";
+        iframe.style.zIndex = "1000";
+    }, 4000);
 }
 
 function prevSong() {
@@ -1265,18 +1284,20 @@ function initMediaSessionHandlers() {
 function updateMediaSessionPositionState() {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
         const song = songs[currentSongIndex];
-        if (!song) return;
+        if (!song && pendingKickstartIndex === null) return;
 
         let duration = 0;
         let currentTime = 0;
         let rate = 1;
 
-        if (song.type === 'youtube' && ytReady && ytPlayer.getDuration) {
-            duration = ytPlayer.getDuration();
-            currentTime = ytPlayer.getCurrentTime();
-            // Use actual playback rate if available
-            try { rate = ytPlayer.getPlaybackRate() || 1; } catch (e) { }
-        } else if (song.type === 'audio') {
+        // Force YouTube stats if bridge is active
+        if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
+            if (ytReady && ytPlayer.getDuration) {
+                duration = ytPlayer.getDuration();
+                currentTime = ytPlayer.getCurrentTime();
+                try { rate = ytPlayer.getPlaybackRate() || 1; } catch (e) { }
+            }
+        } else if (song && song.type === 'audio') {
             duration = audioElement.duration;
             currentTime = audioElement.currentTime;
             rate = audioElement.playbackRate || 1;
@@ -1375,7 +1396,12 @@ document.addEventListener('visibilitychange', () => {
         if (song && pendingKickstartIndex === null) updateMediaSession(song);
         updateProgress();
         if (userWantsToPlay && !isPlaying) {
-            if (song && song.type === 'youtube' && ytReady) ytPlayer.playVideo();
+            if (pendingKickstartIndex !== null) {
+                console.log("Foreground detected during bridge, forcing resumption.");
+                nextSong();
+            } else if (song && song.type === 'youtube' && ytReady) {
+                ytPlayer.playVideo();
+            }
         }
     }
     if (userWantsToPlay) startKeepAlive();
@@ -1405,14 +1431,16 @@ function togglePlay() {
 
 function updateProgress() {
     const song = songs[currentSongIndex];
-    if (!song) return;
+    if (!song && pendingKickstartIndex === null) return;
 
     let current, duration;
 
-    if (song.type === 'youtube' && ytReady && ytPlayer.getDuration) {
-        current = ytPlayer.getCurrentTime();
-        duration = ytPlayer.getDuration();
-    } else if (song.type === 'audio') {
+    if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
+        if (ytReady && ytPlayer.getDuration) {
+            current = ytPlayer.getCurrentTime();
+            duration = ytPlayer.getDuration();
+        }
+    } else if (song && song.type === 'audio') {
         current = audioElement.currentTime;
         duration = audioElement.duration;
     }
