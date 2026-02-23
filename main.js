@@ -1140,18 +1140,15 @@ async function playSong(index) {
             setStatus("ESPERANDO LLAVE (Play o Siguiente)");
 
             // Prime the audio engine
-            audioElement.src = SILENT_TRACK_FILE;
-            audioElement.play().catch(e => {
-                console.warn("Autoplay block (Expected)");
-            });
+            if (ytReady) { ytPlayer.loadVideoById(BRIDGE_YOUTUBE_ID); ytPlayer.playVideo(); }
 
             // MediaSession instructions - LOCKED until interaction
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: bridgeTitle,
                     artist: bridgeArtist,
-                    album: "Purelyd Web",
-                    artwork: [{ src: "https://img.icons8.com/color/512/music.png", sizes: "512x512", type: "image/png" }]
+                    album: "Purelyd Bridge",
+                    artwork: [{ src: "https://img.youtube.com/vi/" + BRIDGE_YOUTUBE_ID + "/maxresdefault.jpg", sizes: "512x512", type: "image/png" }]
                 });
                 navigator.mediaSession.playbackState = "paused";
             }
