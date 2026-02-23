@@ -1283,8 +1283,7 @@ function initMediaSessionHandlers() {
         }
     }
 
-    // Clear any generic placeholder metadata securely
-    navigator.mediaSession.metadata = null;
+}
 }
 
 function updateMediaSessionPositionState() {
