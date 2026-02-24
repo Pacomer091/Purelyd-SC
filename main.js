@@ -15,6 +15,10 @@ let users = [];
 let playlists = [];
 let currentPlaylistId = null; // null means 'Home' or 'Library'
 let searchTerm = '';
+let youtubeResults = [];
+let isSearchingYT = false;
+let searchTimeout = null;
+const SYSTEM_BOT = 'PurelydBot';
 
 // Global error handler for debugging
 window.onerror = function (msg, url, line) {
@@ -519,6 +523,54 @@ function renderSongs() {
 
         songGrid.innerHTML += recoSection;
 
+        // YouTube Results Section (Home View)
+        if (isSearchingYT) {
+            songGrid.innerHTML += `
+                <div style="grid-column: 1 / -1; margin-top: 20px; text-align: center; color: #888;">
+                    <div class="spinner" style="width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #ff0033; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px;"></div>
+                    Buscando en YouTube...
+                </div>
+            `;
+        } else if (searchTerm && searchTerm.length >= 3 && youtubeResults.length > 0) {
+            songGrid.innerHTML += `
+                <div style="grid-column: 1 / -1; margin-top: 20px;">
+                    <h2 style="color: white; font-size: 1.3rem; margin-bottom: 12px; display: flex; align-items: center;">
+                        <span style="font-size: 1.5rem; margin-right: 10px;">🌎</span> Descubrimientos de YouTube
+                    </h2>
+                    <p style="color: #888; font-size: 0.9rem; margin-bottom: 15px;">Toca para reproducir (se guardará automáticamente).</p>
+                </div>
+            ` + youtubeResults.map((song, idx) => `
+                <div class="song-card yt-search-card" data-yt-index="${idx}" style="cursor:pointer; border: 1px solid rgba(255,0,51,0.2);">
+                    <img src="${song.cover}" alt="${song.title}">
+                    <div class="title">${song.title}</div>
+                    <div class="artist">${song.artist}</div>
+                </div>
+            `).join("");
+        }
+
+        // Attach YT search click handlers
+        songGrid.querySelectorAll(".yt-search-card").forEach(card => {
+            card.onclick = async () => {
+                const idx = parseInt(card.dataset.ytIndex);
+                const song = youtubeResults[idx];
+                if (!song) return;
+
+                // Auto-Index in background
+                SongDB.getSongByUrl(song.url).then(existing => {
+                    if (!existing) {
+                        console.log("Auto-indexing discovery:", song.title);
+                        SongDB.addSong(song, SYSTEM_BOT);
+                    }
+                }).catch(e => console.warn("Auto-index check failed", e));
+
+                // Play it
+                const newSong = { ...song, type: 'youtube' };
+                songs = [newSong, ...songs];
+                renderSongs();
+                playSong(0);
+            };
+        });
+
         // Attach ALL click handlers AFTER DOM is finalized
         document.getElementById("home-random").onclick = () => {
             if (songs.length === 0) return;
@@ -583,6 +635,28 @@ function renderSongs() {
     // SEARCH / PLAYLIST VIEW: Show songs
     const favIds = currentUser ? (currentUser.favorites || []) : [];
 
+    // If searching and we have YT results, show them below the filtered songs
+    let ytSectionHeader = "";
+    let ytSectionContent = "";
+    if (searchTerm && searchTerm.length >= 3) {
+        if (isSearchingYT) {
+            ytSectionHeader = `<div style="grid-column: 1 / -1; margin-top: 20px; text-align: center; color: #888;">Buscando más en YouTube...</div>`;
+        } else if (youtubeResults.length > 0) {
+            ytSectionHeader = `
+                <div style="grid-column: 1 / -1; margin-top: 20px; border-top: 1px solid #333; padding-top: 20px;">
+                    <h2 style="color: white; font-size: 1.1rem; margin-bottom: 12px; opacity: 0.8;">Más resultados de YouTube</h2>
+                </div>
+            `;
+            ytSectionContent = youtubeResults.map((song, idx) => `
+                <div class="song-card yt-search-card" data-yt-index="${idx}" style="cursor:pointer; opacity: 0.8;">
+                    <img src="${song.cover}" alt="${song.title}">
+                    <div class="title">${song.title}</div>
+                    <div class="artist">${song.artist}</div>
+                </div>
+            `).join("");
+        }
+    }
+
     const filteredSongs = songs.filter(song => {
         const query = searchTerm.toLowerCase();
         return song.title.toLowerCase().includes(query) ||
@@ -608,7 +682,25 @@ function renderSongs() {
             <div class="title">${song.title}</div>
             <div class="artist">${song.artist}</div>
         </div>
-    `}).join('');
+    `}).join('') + ytSectionHeader + ytSectionContent;
+
+    // Attach YT search click handlers for search view
+    songGrid.querySelectorAll(".yt-search-card").forEach(card => {
+        card.onclick = async () => {
+            const idx = parseInt(card.dataset.ytIndex);
+            const song = youtubeResults[idx];
+            if (!song) return;
+
+            // Auto-Index
+            SongDB.getSongByUrl(song.url).then(existing => {
+                if (!existing) SongDB.addSong(song, SYSTEM_BOT);
+            }).catch(e => console.warn("Auto-index failed", e));
+
+            songs = [song, ...songs];
+            renderSongs();
+            playSong(0);
+        };
+    });
 
     // Update Select Button visibility
     if (currentPlaylistId === 'uploads' && currentUser) {
@@ -672,7 +764,43 @@ function setupEventListeners() {
     searchInput.oninput = (e) => {
         searchTerm = e.target.value;
         renderSongs();
+
+        // YouTube Smart Search (Debounced)
+        if (searchTimeout) clearTimeout(searchTimeout);
+        if (searchTerm.trim().length >= 3) {
+            searchTimeout = setTimeout(() => searchYouTube(searchTerm), 800);
+        } else {
+            youtubeResults = [];
+            renderSongs();
+        }
     };
+
+    async function searchYouTube(query) {
+        if (!query) return;
+        isSearchingYT = true;
+        renderSongs();
+
+        try {
+            // Using Piped API for search (public instance)
+            const res = await fetch(`https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}&filter=music_videos`);
+            if (res.ok) {
+                const data = await res.json();
+                youtubeResults = (data.items || []).slice(0, 8).map(item => ({
+                    id: 'yt-' + item.url.split('v=')[1],
+                    title: item.title,
+                    artist: item.uploaderName || "YouTube",
+                    url: 'https://www.youtube.com' + item.url,
+                    cover: item.thumbnail || "",
+                    type: 'youtube'
+                }));
+            }
+        } catch (e) {
+            console.warn("YouTube search failed:", e);
+        } finally {
+            isSearchingYT = false;
+            renderSongs();
+        }
+    }
 
     // Mobile Bottom Nav Handlers
     mobileNavHome.onclick = () => {

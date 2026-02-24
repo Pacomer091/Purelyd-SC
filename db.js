@@ -88,6 +88,12 @@ const SongDB = {
         const { error } = await getSupabase().from('songs').update(song).eq('id', song.id);
         if (error) throw error;
         return true;
+    },
+
+    async getSongByUrl(url) {
+        const { data, error } = await getSupabase().from('songs').select('*').eq('url', url).maybeSingle();
+        if (error) throw error;
+        return data;
     }
 };
 
