@@ -780,29 +780,48 @@ function setupEventListeners() {
         isSearchingYT = true;
         renderSongs();
 
+        // 1. Try Worker Search first (if URL is set)
+        const WORKER_URL = ''; // Coloca aquí tu URL de Cloudflare si la tienes
+        if (WORKER_URL) {
+            try {
+                const res = await fetch(`${WORKER_URL}/search?q=${encodeURIComponent(query)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === 'ok') {
+                        youtubeResults = data.results;
+                        isSearchingYT = false;
+                        renderSongs();
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("Worker search failed, falling back to public APIs");
+            }
+        }
+
+        // 2. Fallback to public Invidious instances
         const instances = [
-            'https://pipedapi.kavin.rocks',
-            'https://api.piped.video',
-            'https://pipedapi.lunar.icu',
-            'https://piped-api.garudalinux.org'
+            'https://invidious.lunar.icu',
+            'https://yewtu.be',
+            'https://inv.vern.cc',
+            'https://invidious.projectsegfau.lt'
         ];
 
         let success = false;
         for (const instance of instances) {
             try {
-                // Use a CORS proxy to avoid browser blocks
-                const targetUrl = `${instance}/search?q=${encodeURIComponent(query)}&filter=music_videos`;
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const targetUrl = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
                 const res = await fetch(proxyUrl);
                 if (res.ok) {
                     const data = await res.json();
-                    youtubeResults = (data.items || []).slice(0, 8).map(item => ({
-                        id: 'yt-' + item.url.split('v=')[1],
+                    youtubeResults = (data || []).slice(0, 8).map(item => ({
+                        id: 'yt-' + item.videoId,
                         title: item.title,
-                        artist: item.uploaderName || "YouTube",
-                        url: 'https://www.youtube.com' + item.url,
-                        cover: item.thumbnail || "",
+                        artist: item.author || "YouTube",
+                        url: `https://www.youtube.com/watch?v=${item.videoId}`,
+                        cover: item.videoThumbnails ? item.videoThumbnails.find(t => t.quality === 'medium')?.url : `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`,
                         type: 'youtube'
                     }));
                     success = true;
@@ -810,12 +829,12 @@ function setupEventListeners() {
                     break;
                 }
             } catch (e) {
-                console.warn(`Search failed on ${instance}, trying next...`, e);
+                console.warn(`Search failed on ${instance}`, e);
             }
         }
 
         if (!success) {
-            console.error("All YouTube search instances failed.");
+            console.error("All search providers failed.");
             youtubeResults = [];
         }
 
