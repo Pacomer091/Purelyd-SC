@@ -518,7 +518,7 @@ input[type="range"]::-webkit-slider-thumb {
     backdrop-filter: blur(8px);
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    z-index: 5000;
 }
 
 .modal-content {
@@ -526,8 +526,6 @@ input[type="range"]::-webkit-slider-thumb {
     padding: 40px;
     border-radius: 16px;
     width: 420px;
-    max-width: 90vw;
-    box-sizing: border-box;
     border: 1px solid var(--border-color);
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
 }
@@ -1148,5 +1146,4 @@ button[type="submit"]:hover {
     .sidebar-overlay {
         display: none !important;
     }
-}@ k e y f r a m e s   s p i n   {   t o   {   t r a n s f o r m :   r o t a t e ( 3 6 0 d e g ) ;   }   }  
- 
+}

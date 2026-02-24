@@ -66,18 +66,6 @@ const SongDB = {
         return true;
     },
 
-    async addSongs(songsArray, username) {
-        const songsWithUser = songsArray.map(s => ({ ...s, username }));
-        // Upsert 50 at a time to avoid heavy requests
-        const chunkSize = 50;
-        for (let i = 0; i < songsWithUser.length; i += chunkSize) {
-            const chunk = songsWithUser.slice(i, i + chunkSize);
-            const { error } = await getSupabase().from('songs').upsert(chunk);
-            if (error) throw error;
-        }
-        return true;
-    },
-
     async getSongsByUser(username) {
         const { data, error } = await getSupabase().from('songs').select('*').eq('username', username);
         if (error) throw error;
@@ -100,12 +88,6 @@ const SongDB = {
         const { error } = await getSupabase().from('songs').update(song).eq('id', song.id);
         if (error) throw error;
         return true;
-    },
-
-    async getSongByUrl(url) {
-        const { data, error } = await getSupabase().from('songs').select('*').eq('url', url).maybeSingle();
-        if (error) throw error;
-        return data;
     }
 };
 
