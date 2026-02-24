@@ -1168,8 +1168,14 @@ function setupEventListeners() {
     playPauseBtn.onclick = togglePlay;
 
     progressBar.oninput = () => {
-        const time = (progressBar.value / 100) * audioElement.duration;
-        audioElement.currentTime = time;
+        const song = songs[currentSongIndex];
+        if (song.type === 'youtube') {
+            const time = (progressBar.value / 100) * ytPlayer.getDuration();
+            ytPlayer.seekTo(time, true);
+        } else {
+            const time = (progressBar.value / 100) * audioElement.duration;
+            audioElement.currentTime = time;
+        }
     };
 
     volumeSlider.oninput = () => {
@@ -1284,54 +1290,51 @@ async function playSong(index, resumeAtSeconds = 0) {
             return;
         }
 
-        // Innertube via Cloudflare Worker (ad-free audio)
-        setStatus('FETCHING STREAM: ' + videoId);
-        playPauseBtn.textContent = '\u23F8';
-        userWantsToPlay = true;
-        updateMediaSession(song);
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'playing';
-        }
-        startKeepAlive();
+        // Foreground play mode enabled.
+        if (ytReady) {
+            setStatus(`PLAYING YT: ${videoId}`);
 
-        try {
-            const resp = await fetch('https://purelyd.2008qlfta.workers.dev/stream?v=' + videoId, { signal: AbortSignal.timeout(12000) });
-            const data = await resp.json();
-
-            if (data.status === 'ok' && data.url) {
-                const proxyUrl = 'https://purelyd.2008qlfta.workers.dev/proxy?url=' + encodeURIComponent(data.url);
-                const kbps = Math.round((data.bitrate || 0) / 1000);
-                setStatus('STREAM: ' + kbps + 'kbps via ' + data.client);
-
-                audioElement.src = proxyUrl;
-                audioElement.play().then(() => {
-                    isPlaying = true;
-                    userWantsToPlay = true;
-                    if (resumeAtSeconds > 0) {
-                        audioElement.currentTime = resumeAtSeconds;
-                    }
-                    setStatus('PLAYING (' + kbps + 'kbps)');
-                    if ('mediaSession' in navigator) {
-                        updateMediaSession(song);
-                        navigator.mediaSession.playbackState = 'playing';
-                    }
-                    updateMediaSessionPositionState();
-                    startKeepAlive();
-                }).catch(e => {
-                    setStatus('PLAY ERROR: ' + e.message);
-                    console.error('Stream playback error:', e);
-                });
-            } else {
-                setStatus('EXTRACTION FAILED');
-                console.error('Worker response:', data);
-                setTimeout(() => nextSong(), 2000);
+            // Resilience 13.0: Hard State Reset
+            // 1. Scrub previous state to prevent "Sticky Timestamp" bug
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "none";
+                try {
+                    // Force a zero-state to bridge the gap
+                    navigator.mediaSession.setPositionState({
+                        duration: 120, // Dummy
+                        playbackRate: 0,
+                        position: 0
+                    });
+                } catch (e) { }
             }
-        } catch (e) {
-            setStatus('WORKER ERROR: ' + e.message.substring(0, 30));
-            console.error('Worker fetch failed:', e);
-            setTimeout(() => nextSong(), 2000);
+            lastProgressSyncSec = -1;
+
+            // 2. Warm up web audio stack synchronously
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') audioContext.resume();
+
+            // 3. Warm up MediaSession with REAL metadata immediately
+            updateMediaSession(song);
+            navigator.mediaSession.playbackState = "playing";
+
+            // 4. Load YouTube (Primary Focus Hunter)
+            if (song.type === 'youtube') kickstartYouTubeVisibility();
+            if (resumeAtSeconds > 0) {
+                ytPlayer.loadVideoById({ videoId: videoId, startSeconds: resumeAtSeconds });
+                console.log(`Resuming at ${resumeAtSeconds}s`);
+            } else {
+                ytPlayer.loadVideoById(videoId);
+            }
+            userWantsToPlay = true;
+            isPlaying = false; // Defer to onPlayerStateChange
+            playPauseBtn.textContent = '⏸';
+        } else {
+            setStatus("WAITING FOR YT PLAYER...");
+            pendingSongId = videoId;
+            userWantsToPlay = true;
+            isPlaying = true;
+            playPauseBtn.textContent = '⏸';
         }
-        isPlaying = false;
     } else {
         setStatus("PLAYING AUDIO FILE");
         audioElement.src = song.url;
@@ -1467,12 +1470,22 @@ function updateMediaSessionPositionState() {
 }
 
 function seekRelative(offset) {
-    audioElement.currentTime += offset;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube' && ytReady) {
+        ytPlayer.seekTo(ytPlayer.getCurrentTime() + offset, true);
+    } else {
+        audioElement.currentTime += offset;
+    }
     updateMediaSessionPositionState();
 }
 
 function seekToTime(time) {
-    audioElement.currentTime = time;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube' && ytReady) {
+        ytPlayer.seekTo(time, true);
+    } else {
+        audioElement.currentTime = time;
+    }
 }
 
 // Background Keep-Alive Logic
@@ -1561,12 +1574,24 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function togglePlay() {
-    if (audioElement.paused) {
-        audioElement.play();
-        userWantsToPlay = true;
+    const song = songs[currentSongIndex];
+    if (song.type === 'youtube') {
+        const state = ytPlayer.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+            ytPlayer.pauseVideo();
+            userWantsToPlay = false;
+        } else {
+            ytPlayer.playVideo();
+            userWantsToPlay = true;
+        }
     } else {
-        audioElement.pause();
-        userWantsToPlay = false;
+        if (audioElement.paused) {
+            audioElement.play();
+            userWantsToPlay = true;
+        } else {
+            audioElement.pause();
+            userWantsToPlay = false;
+        }
     }
 }
 
@@ -1576,12 +1601,13 @@ function updateProgress() {
 
     let current, duration;
 
-    if (pendingKickstartIndex !== null) {
+    if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
         if (ytReady && ytPlayer.getDuration) {
             current = ytPlayer.getCurrentTime();
-            duration = 3;
+            // Hardcode bridge duration to 3s
+            duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
         }
-    } else {
+    } else if (song && song.type === 'audio') {
         current = audioElement.currentTime;
         duration = audioElement.duration;
     }
@@ -1592,8 +1618,10 @@ function updateProgress() {
         currentTimeEl.textContent = formatTime(current);
         totalTimeEl.textContent = formatTime(duration);
 
+        // Resilience 13.0: Smooth & Stable Progress Sync
         const currentSec = Math.floor(current);
-        if (isPlaying && currentSec % 5 === 0) {
+        if (isPlaying && (song.type === 'youtube' || currentSec % 5 === 0)) {
+            // Jitter Guard: Only sync with OS if we haven't synced this specific second yet
             if (lastProgressSyncSec !== currentSec) {
                 updateMediaSessionPositionState();
                 lastProgressSyncSec = currentSec;
