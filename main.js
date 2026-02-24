@@ -19,6 +19,7 @@ let youtubeResults = [];
 let isSearchingYT = false;
 let searchTimeout = null;
 const SYSTEM_BOT = 'PurelydBot';
+const WORKER_URL = 'https://purelyd.2008qlfta.workers.dev';
 
 // Global error handler for debugging
 window.onerror = function (msg, url, line) {
@@ -781,7 +782,6 @@ function setupEventListeners() {
         renderSongs();
 
         // 1. Try Worker Search first (if URL is set)
-        const WORKER_URL = 'https://purelyd.2008qlfta.workers.dev'; // Coloca aquí tu URL de Cloudflare si la tienes
         if (WORKER_URL) {
             try {
                 const res = await fetch(`${WORKER_URL}/search?q=${encodeURIComponent(query)}`);
@@ -1094,61 +1094,56 @@ function setupEventListeners() {
         const playlistMatch = lines[0].match(/[?&]list=([^#&?]+)/);
         if (playlistMatch && lines.length === 1) {
             const playlistId = playlistMatch[1];
-            importProgressText.textContent = `Extrayendo canciones de la playlist...`;
+            importProgressText.textContent = `Extrayendo canciones de la playlist vía Worker...`;
 
             try {
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(lines[0])}`;
-                const response = await fetch(proxyUrl);
+                const response = await fetch(`${WORKER_URL}/playlist?list=${playlistId}`);
+                if (!response.ok) throw new Error("Worker responded with error");
+
                 const data = await response.json();
-                const html = data.contents;
-
-                // Extract video IDs and Titles using regex from ytInitialData
-                const videoIds = [];
-                const idRegex = /"videoId":"([^"]{11})"/g;
-                let match;
-                while ((match = idRegex.exec(html)) !== null) {
-                    if (!videoIds.includes(match[1])) videoIds.push(match[1]);
-                }
-
-                if (videoIds.length > 0) {
-                    lines = videoIds.map(id => `https://www.youtube.com/watch?v=${id}`);
-                    console.log(`Extraction successful: ${lines.length} songs found.`);
+                if (data.status === 'ok' && data.results.length > 0) {
+                    importProgressText.textContent = `Guardando ${data.results.length} canciones...`;
+                    await SongDB.addSongs(data.results, currentUser.username);
+                    importedCount = data.results.length;
+                    lines = []; // Clear lines so the loop below doesn't run
                 } else {
-                    throw new Error("No se encontraron vídeos en la playlist.");
+                    throw new Error(data.message || "No se encontraron vídeos.");
                 }
             } catch (e) {
-                alert("Error al extraer la playlist. Intenta pegar los enlaces de los vídeos directamente.");
-                console.error("Playlist extraction error:", e);
-                startBulkImportBtn.disabled = false;
-                return;
+                console.error("Playlist import error:", e);
+                alert("Error al importar la playlist. Intentando método alternativo...");
+                // Fallback: If worker fails, we continue with the original list of URLs if possible
             }
         }
 
-        for (let i = 0; i < lines.length; i++) {
-            const url = lines[i];
-            const ytId = getYTId(url);
+        // Process leftovers or direct URLs
+        if (lines.length > 0) {
+            for (let i = 0; i < lines.length; i++) {
+                const url = lines[i];
+                const ytId = getYTId(url);
 
-            importProgressText.textContent = `Procesando ${i + 1} de ${lines.length}...`;
-            importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
+                importProgressText.textContent = `Procesando ${i + 1} de ${lines.length}...`;
+                importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
-            if (ytId) {
-                try {
-                    const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        const newSong = {
-                            id: Date.now() + Math.random(),
-                            title: data.title || "Unknown Title",
-                            artist: data.author_name || "Unknown Artist",
-                            url: url,
-                            cover: data.thumbnail_url || "",
-                            type: 'youtube'
-                        };
-                        await SongDB.addSong(newSong, currentUser.username);
-                        importedCount++;
+                if (ytId) {
+                    try {
+                        const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            const newSong = {
+                                id: Date.now() + Math.random(),
+                                title: data.title || "Unknown Title",
+                                artist: data.author_name || "Unknown Artist",
+                                url: url,
+                                cover: data.thumbnail_url || "",
+                                type: 'youtube'
+                            };
+                            await SongDB.addSong(newSong, currentUser.username);
+                            importedCount++;
+                        }
+                    } catch (e) {
+                        console.error("Error importing:", url, e);
                     }
-                } catch (e) {
-                    console.error("Error importing:", url, e);
                 }
             }
         }
