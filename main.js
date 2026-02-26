@@ -1,7 +1,10 @@
-﻿const DEFAULT_SONGS = [
+﻿// SoundCloud Official API Config
+const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
+const SC_API_BASE = 'https://api-v2.soundcloud.com';
+const DEFAULT_SONGS = [
     {
         id: 1,
-        title: "Welcome to Purelyd",
+        title: "Welcome to Purelyd SC",
         artist: "Assistant",
         url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
         cover: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop",
@@ -23,21 +26,11 @@ window.onerror = function (msg, url, line) {
 
 let currentSongIndex = 0;
 let isPlaying = false;
-let ytPlayer;
-let ytReady = false;
-let pendingSongId = null;
-let audioContext = null; // Audio Focus Warming Context
-let lastProgressSyncSec = -1; // Global guard for MediaSession jitter
-let editingSongId = null; // Track which song is being edited
+let audioContext = null;
+let editingSongId = null;
 let isSelectMode = false;
 let selectedSongIds = [];
-let userWantsToPlay = false; // Persistent state for background bypass
-let pendingKickstartIndex = null;
-let pendingResumeTime = 0; // Save playback position for background resume
-let bridgeTimeout = null; // Safety timer for auto-resume
-let keepAliveOsc = null;
-const SILENT_TRACK_FILE = "silent_keepalive.mp3";
-const BRIDGE_YOUTUBE_ID = "KgUo_fR73yY";
+let userWantsToPlay = false;
 
 // DOM Elements
 const songGrid = document.getElementById('song-grid');
@@ -86,7 +79,12 @@ const authConfirmPassword = document.getElementById('auth-confirm-password');
 const genreModal = document.getElementById('genre-modal');
 const genreGrid = document.getElementById('genre-grid');
 const saveGenresBtn = document.getElementById('save-genres');
-const audioElement = document.getElementById('audio-element');
+
+// SoundCloud Official Widget Reference
+let scPlayerIframe = null;
+let scWidget = null;
+let widgetReady = false;
+
 const playPauseBtn = document.getElementById('play-pause-btn');
 const progressBar = document.getElementById('progress-bar');
 const currentTimeEl = document.querySelector('.current-time');
@@ -125,164 +123,10 @@ function setStatus(msg) {
     console.log(`[Status] ${msg}`);
 }
 
-// YouTube API Initialization
-let initAttempts = 0;
-window.onYouTubeIframeAPIReady = function () {
-    if (ytPlayer) return; // Already initialized
-
-    setStatus("API LOADED, INITIALIZING...");
-
-    // Check if running correctly
-    if (window.location.protocol === 'file:') {
-        console.warn("WARNING: Running from file:// protocol. YouTube API may be blocked.");
-        setStatus("FILE PROTOCOL DETECTED (MAY BLOCK YT)");
-    }
-
-    try {
-        ytPlayer = new YT.Player('youtube-player', {
-            height: '200',
-            width: '200',
-            playerVars: {
-                'autoplay': 1,
-                'controls': 0,
-                'disablekb': 1,
-                'fs': 0,
-                'iv_load_policy': 3,
-                'modestbranding': 1,
-                'rel': 0,
-                'enablejsapi': 1,
-                'origin': window.location.origin || '*',
-                'playsinline': 1
-            },
-            events: {
-                'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange,
-                'onError': onPlayerError
-            }
-        });
-    } catch (e) {
-        console.error("YT Player Initialization Error:", e);
-        setStatus("INITIALIZATION ERROR");
-    }
-};
-
-// Resilience: Check if API is already there or load missed it
-if (window.YT && window.YT.Player) {
-    window.onYouTubeIframeAPIReady();
-} else {
-    const checkYT = setInterval(() => {
-        initAttempts++;
-        if (window.YT && window.YT.Player) {
-            window.onYouTubeIframeAPIReady();
-            clearInterval(checkYT);
-        } else if (initAttempts > 10) {
-            clearInterval(checkYT);
-            console.warn("YT API failed to load after timeout.");
-        }
-    }, 1000);
-}
-
-function onPlayerReady(event) {
-    ytReady = true;
-    setStatus("READY");
-    console.log("YouTube Player is ready");
-    if (pendingSongId) {
-        setStatus("PLAYING PENDING...");
-        ytPlayer.loadVideoById(pendingSongId);
-        ytPlayer.playVideo();
-        pendingSongId = null;
-    }
-}
-
-function onPlayerError(e) {
-    const errorMap = {
-        2: "Invalid ID",
-        5: "HTML5 Error",
-        100: "Not Found",
-        101: "Embedded Disabled",
-        150: "Embedded Disabled"
-    };
-    const errorMsg = errorMap[e.data] || `Error Code ${e.data}`;
-    setStatus(`ERROR: ${errorMsg}`);
-    console.error("YouTube Player Error:", e.data);
-
-    if (e.data === 101 || e.data === 150) {
-        alert("Este vÃ­deo tiene desactivada la reproducciÃ³n en otras webs. Prueba con otro enlace.");
-    }
-}
-
-function onPlayerStateChange(event) {
-    const states = {
-        [-1]: "UNSTARTED",
-        [YT.PlayerState.ENDED]: "ENDED",
-        [YT.PlayerState.PLAYING]: "PLAYING",
-        [YT.PlayerState.PAUSED]: "PAUSED",
-        [YT.PlayerState.BUFFERING]: "BUFFERING",
-        [YT.PlayerState.CUED]: "CUED"
-    };
-    setStatus(states[event.data] || "UNKNOWN");
-    console.log(`[YT State] ${states[event.data]}`);
-
-    if (event.data === YT.PlayerState.ENDED) {
-        try {
-            if (pendingKickstartIndex !== null) {
-                console.log("Bridge ended, resuming original song...");
-                nextSong();
-            } else {
-                nextSong();
-            }
-        } catch (e) {
-            console.error("Error in onPlayerStateChange ENDED:", e);
-            setStatus("TRANSITION ERROR");
-        }
-    } else if (event.data === YT.PlayerState.PLAYING) {
-        isPlaying = true;
-        userWantsToPlay = true;
-        playPauseBtn.textContent = '⏸';
-        // Skip metadata/keepalive updates during bridge to avoid competing audio
-        if (pendingKickstartIndex === null) {
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "playing";
-                updateMediaSession(songs[currentSongIndex]);
-            }
-            startKeepAlive();
-        }
-    } else if (event.data === YT.PlayerState.PAUSED) {
-        isPlaying = false;
-        playPauseBtn.textContent = '▶';
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = "paused";
-            updateMediaSessionPositionState();
-        }
-        stopKeepAlive();
-    }
-}
-
+// Utility functions for audio playback
 function nextSong() {
-    console.log("nextSong() called. Pending:", pendingKickstartIndex);
-    if (pendingKickstartIndex !== null) {
-        const target = pendingKickstartIndex;
-        const resumeAt = pendingResumeTime;
-        pendingKickstartIndex = null;
-        pendingResumeTime = 0;
-        if (bridgeTimeout) { clearTimeout(bridgeTimeout); bridgeTimeout = null; }
-        playSong(target, resumeAt);
-        return;
-    }
     let nextIndex = (currentSongIndex + 1) % songs.length;
     playSong(nextIndex);
-}
-
-function kickstartYouTubeVisibility() {
-    const iframe = document.getElementById('youtube-player');
-    if (!iframe) return;
-    iframe.style.opacity = "1";
-    iframe.style.zIndex = "10001";
-    iframe.focus();
-    setTimeout(() => {
-        iframe.style.opacity = "0.8";
-        iframe.style.zIndex = "1000";
-    }, 4000);
 }
 
 function prevSong() {
@@ -295,7 +139,7 @@ async function init() {
     console.log("Initializing application...");
 
     // 1. Load session first
-    currentUser = JSON.parse(localStorage.getItem('purelyd-current-user'));
+    currentUser = JSON.parse(localStorage.getItem('purelydsc-current-user'));
 
     // 2. Mandatory UI Setup
     setupEventListeners();
@@ -307,6 +151,10 @@ async function init() {
         // Refresh users from cloud
         users = await UserDB.getAllUsers();
         console.log("Cloud users loaded.");
+
+        if (currentUser) {
+            await migrateLegacyToSC(currentUser.username);
+        }
 
         await loadUserSongs();
         await loadPlaylists();
@@ -401,6 +249,78 @@ async function migrateData() {
     console.log("Migration complete.");
 }
 
+async function migrateLegacyToSC(username) {
+    const migratedKey = `sc-migrated-${username}`;
+    if (localStorage.getItem(migratedKey)) return;
+
+    try {
+        console.log("[Auto-Migration] Checking for legacy YouTube songs...");
+        setStatus("Verificando biblioteca antigua...");
+
+        // 1. Fetch old YouTube songs from the original DB table (read-only)
+        const legacySongs = await SongDB.getLegacySongsByUser(username);
+        if (!legacySongs || legacySongs.length === 0) {
+            console.log("[Auto-Migration] No legacy songs found. Marking as done.");
+            localStorage.setItem(migratedKey, 'true');
+            return;
+        }
+
+        // 2. See if they already exist in the new SC table
+        const currentSCSongs = await SongDB.getSongsByUser(username);
+        if (currentSCSongs && currentSCSongs.length >= legacySongs.length) {
+            console.log("[Auto-Migration] SC library already populated. Skipping.");
+            localStorage.setItem(migratedKey, 'true');
+            return;
+        }
+
+        console.log(`[Auto-Migration] Found ${legacySongs.length} legacy songs. Starting background SC conversion...`);
+        alert(`¡Hola! Estamos actualizando tu biblioteca vieja al nuevo sistema de alta calidad de SoundCloud. Esto puede tardar unos segundos, por favor no cierres la página... 🎵🚀`);
+
+        let migratedCount = 0;
+
+        // 3. Migrate each song silently
+        for (const oldSong of legacySongs) {
+            if (oldSong.type === 'youtube') {
+                setStatus(`Migrando: ${oldSong.title}...`);
+                const scMatch = await fetchSCReplacement(`${oldSong.title} ${oldSong.artist || ''}`.trim());
+
+                if (scMatch) {
+                    // Keep user's custom title/artist, but swap the underlying engine data
+                    const newSong = {
+                        ...oldSong,
+                        id: scMatch.id, // Must update ID so the player doesn't trip on old YT IDs
+                        url: scMatch.url,
+                        cover: scMatch.cover || oldSong.cover,
+                        type: 'soundcloud',
+                        durationMs: scMatch.durationMs || oldSong.durationMs
+                    };
+
+                    await SongDB.addSong(newSong, username);
+                    migratedCount++;
+                    console.log(`[Auto-Migration] Converted: ${oldSong.title} -> ${scMatch.title}`);
+                } else {
+                    console.warn(`[Auto-Migration] No SC match found for: ${oldSong.title}. Skipping.`);
+                }
+
+                // Be polite to the SC API proxy
+                await new Promise(r => setTimeout(r, 800));
+            }
+        }
+
+        localStorage.setItem(migratedKey, 'true');
+        console.log(`[Auto-Migration] Finished. Successfully converted ${migratedCount}/${legacySongs.length} tracks.`);
+
+        if (migratedCount > 0) {
+            alert(`¡Migración Lista! Hemos rescatado ${migratedCount} canciones de tu antigua biblioteca a SoundCloud Oficial. A disfrutar. 🎉`);
+            // Force a hard refresh of the local lists
+            window.location.reload();
+        }
+    } catch (e) {
+        console.error("[Auto-Migration] Fatal Error during migration:", e);
+        setStatus("Error en la migración SC.");
+    }
+}
+
 async function loadUserSongs() {
     if (currentUser) {
         if (currentPlaylistId === 'favorites') {
@@ -458,8 +378,9 @@ function updateAuthUI() {
         loginStatusText.textContent = 'Log In';
         userAvatar.textContent = '?';
         isPlaying = false;
-        audioElement.pause();
-        if (ytReady && ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
+        if (scWidget && widgetReady) {
+            scWidget.pause();
+        }
     }
 }
 
@@ -472,7 +393,7 @@ function renderSongs() {
             const p = playlists.find(p => p.id === currentPlaylistId);
             mainHeading.textContent = p ? p.name : 'Playlist';
         } else {
-            mainHeading.textContent = searchTerm ? 'Resultados' : 'Purelyd';
+            mainHeading.textContent = searchTerm ? 'Resultados' : 'Purelyd SC';
         }
     }
 
@@ -659,33 +580,104 @@ function renderSongs() {
 
 function getThumbnail(song) {
     if (song.cover) return song.cover;
-    if (song.type === 'youtube') {
-        const id = getYTId(song.url);
-        // Try to get maxres, but could fallback if needed. For now maxres is standard for modern YT.
-        return `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
-    }
     return 'https://via.placeholder.com/300';
 }
 
-function getYTId(url) {
-    if (!url) return null;
-    // Robust pattern for many YT URL formats including shorts and direct IDs
-    const patterns = [
-        /(?:v=|\/v\/|embed\/|youtu\.be\/|\/shorts\/)([^#&?]{11})/,
-        /^[a-zA-Z0-9_-]{11}$/ // Direct ID
-    ];
-    for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) return match[1];
+function getSCId(songIdOrUrl) {
+    if (!songIdOrUrl) return null;
+    if (songIdOrUrl.toString().startsWith("sc-")) {
+        return songIdOrUrl.split("-")[1];
+    }
+    return songIdOrUrl;
+}
+
+function mapSCTrackToPurelyd(track) {
+    return {
+        id: 'sc-' + track.id,
+        title: track.title || "Unknown Title",
+        artist: track.user?.username || "SoundCloud User",
+        url: track.permalink_url, // Vital for the new Widget API
+        cover: track.artwork_url ? track.artwork_url.replace('large', 't500x500') : (track.user?.avatar_url || ""),
+        type: 'soundcloud',
+        durationMs: track.duration,
+        streamable: track.streamable
+    };
+}
+
+// 🚀 AUTO-MIGRATION: Fetch SC match for old YT titles
+async function fetchSCReplacement(title) {
+    if (!title) return null;
+    try {
+        const scUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=1`;
+        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(scUrl)}`;
+        const response = await fetch(targetUrl);
+
+        if (response.ok) {
+            const data = await response.json();
+            const rawTracks = data.collection || [];
+            if (rawTracks.length > 0 && rawTracks[0].streamable) {
+                return mapSCTrackToPurelyd(rawTracks[0]);
+            }
+        }
+    } catch (e) {
+        console.warn(`[Auto-Migration] Failed to find SC match for: ${title}`);
     }
     return null;
 }
 
 function setupEventListeners() {
-    // Search Listener
+    // Search Listener - Use 'Enter' key to search SC API
+    searchInput.addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchTerm = searchInput.value.trim();
+            if (!searchTerm) {
+                currentPlaylistId = null;
+                await loadUserSongs();
+                renderSongs();
+                return;
+            }
+
+            const mainHeading = document.querySelector('.content-area h1');
+            if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
+
+            try {
+                // To bypass Browser CORS without a custom backend worker, we use a public CORS proxy.
+                const scUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(scUrl)}`;
+                const response = await fetch(targetUrl);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const rawTracks = data.collection || [];
+
+                    // Filter and map to Purelyd format
+                    const tracks = rawTracks
+                        .filter(t => t.kind === 'track')
+                        .map(mapSCTrackToPurelyd);
+
+                    currentPlaylistId = 'search'; // Custom virtual playlist state
+                    songs = tracks;
+
+                    renderSongs();
+                    if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
+                    return;
+                }
+                throw new Error(`API Error: ${response.status}`);
+            } catch (err) {
+                console.error("Search error:", err);
+                if (mainHeading) mainHeading.textContent = "Error en la búsqueda";
+            }
+        }
+    });
+
     searchInput.oninput = (e) => {
-        searchTerm = e.target.value;
-        renderSongs();
+        // We only live-filter if they clear it or if they are in their library
+        if (e.target.value === '') {
+            searchTerm = '';
+            currentPlaylistId = null;
+            loadUserSongs().then(renderSongs);
+        }
     };
 
     // Mobile Bottom Nav Handlers
@@ -745,7 +737,7 @@ function setupEventListeners() {
         if (mainHeading) mainHeading.textContent = 'Mis Playlists';
         songGrid.innerHTML = playlists.map(p => `
             <div class="song-card" data-playlist-id="${p.id}" style="cursor:pointer;">
-                <div class="song-cover" style="background: linear-gradient(135deg, #ff0033, #ff6b6b); display:flex; align-items:center; justify-content:center; font-size:2.5rem;">📁</div>
+                <div class="song-cover" style="background: linear-gradient(135deg, #ff6600, #ff9933); display:flex; align-items:center; justify-content:center; font-size:2.5rem;">📁</div>
                 <div class="song-info">
                     <div class="song-title">${p.name}</div>
                     <div class="song-artist">${(p.songIds || []).length} canciones</div>
@@ -862,7 +854,7 @@ function setupEventListeners() {
         const song = songs[menuTargetIndex];
         const newFavs = await UserDB.toggleFavorite(currentUser.username, song.id);
         currentUser.favorites = newFavs;
-        localStorage.setItem('purelyd-current-user', JSON.stringify(currentUser));
+        localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
 
         hideMenu();
         renderSongs(); // Always re-render to show/hide heart icon immediately
@@ -932,33 +924,21 @@ function setupEventListeners() {
         let importedCount = 0;
 
         // Detection: Is it a playlist?
-        const playlistMatch = lines[0].match(/[?&]list=([^#&?]+)/);
-        if (playlistMatch && lines.length === 1) {
-            const playlistId = playlistMatch[1];
-            importProgressText.textContent = `Extrayendo canciones de la playlist...`;
+        if (lines.length === 1 && lines[0].includes('sets/')) {
+            importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(lines[0])}`;
-                const response = await fetch(proxyUrl);
+                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(lines[0])}`);
                 const data = await response.json();
-                const html = data.contents;
 
-                // Extract video IDs and Titles using regex from ytInitialData
-                const videoIds = [];
-                const idRegex = /"videoId":"([^"]{11})"/g;
-                let match;
-                while ((match = idRegex.exec(html)) !== null) {
-                    if (!videoIds.includes(match[1])) videoIds.push(match[1]);
-                }
-
-                if (videoIds.length > 0) {
-                    lines = videoIds.map(id => `https://www.youtube.com/watch?v=${id}`);
+                if (data.status === 'ok' && data.type === 'playlist' && data.results) {
+                    lines = data.results.map(t => t.url);
                     console.log(`Extraction successful: ${lines.length} songs found.`);
                 } else {
-                    throw new Error("No se encontraron vídeos en la playlist.");
+                    throw new Error("No se encontraron canciones o no es una playlist válida.");
                 }
             } catch (e) {
-                alert("Error al extraer la playlist. Intenta pegar los enlaces de los vídeos directamente.");
+                alert("Error al extraer la playlist. Intenta asegurarte de que tu Worker esté en línea y el enlace sea público.");
                 console.error("Playlist extraction error:", e);
                 startBulkImportBtn.disabled = false;
                 return;
@@ -967,34 +947,35 @@ function setupEventListeners() {
 
         for (let i = 0; i < lines.length; i++) {
             const url = lines[i];
-            const ytId = getYTId(url);
 
             importProgressText.textContent = `Procesando ${i + 1} de ${lines.length}...`;
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
-            if (ytId) {
-                try {
-                    const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`);
-                    if (response.ok) {
-                        const data = await response.json();
+            try {
+                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'ok' && data.result) {
+                        const track = data.result;
                         const newSong = {
                             id: Date.now() + Math.random(),
-                            title: data.title || "Unknown Title",
-                            artist: data.author_name || "Unknown Artist",
+                            title: track.title || "Unknown Title",
+                            artist: track.artist || "Unknown Artist",
                             url: url,
-                            cover: data.thumbnail_url || "",
-                            type: 'youtube'
+                            cover: track.cover || "",
+                            type: 'soundcloud',
+                            durationMs: track.durationMs
                         };
                         await SongDB.addSong(newSong, currentUser.username);
                         importedCount++;
                     }
-                } catch (e) {
-                    console.error("Error importing:", url, e);
                 }
+            } catch (e) {
+                console.error("Error importing:", url, e);
             }
         }
 
-        alert(`ï¿½Importaciï¿½n completada! Se aï¿½adieron ${importedCount} canciones.`);
+        alert(`¡Importación completada! Se añadieron ${importedCount} canciones.`);
         startBulkImportBtn.disabled = false;
         bulkImportModal.style.display = 'none';
         await loadUserSongs();
@@ -1006,7 +987,7 @@ function setupEventListeners() {
         addSongModal.style.display = 'flex';
     };
 
-    // Auto-fill YouTube Metadata
+    // Auto-fill SoundCloud Metadata
     const songUrlInput = document.getElementById('song-url');
     const songTitleInput = document.getElementById('song-title');
     const songArtistInput = document.getElementById('song-artist');
@@ -1014,23 +995,23 @@ function setupEventListeners() {
 
     songUrlInput.oninput = async () => {
         const url = songUrlInput.value.trim();
-        const ytId = getYTId(url);
 
-        if (ytId) {
-            console.log("Fetching YT metadata for:", ytId);
+        if (url.includes('soundcloud.com')) {
+            console.log("Resolving SC metadata for:", url);
             try {
-                // Use oEmbed to get title and thumbnail
-                // Using a proxy or direct fetch if CORS allows (YouTube oEmbed usually allows)
-                const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`);
+                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (!songTitleInput.value) songTitleInput.value = data.title || "";
-                    if (!songArtistInput.value) songArtistInput.value = data.author_name || "";
-                    if (!songCoverInput.value) songCoverInput.value = data.thumbnail_url || "";
-                    console.log("Metadata auto-filled");
+                    if (data.status === 'ok' && data.result) {
+                        const track = data.result;
+                        if (!songTitleInput.value) songTitleInput.value = track.title || "";
+                        if (!songArtistInput.value) songArtistInput.value = track.artist || "";
+                        if (!songCoverInput.value) songCoverInput.value = track.cover || "";
+                        console.log("Metadata auto-filled");
+                    }
                 }
             } catch (e) {
-                console.warn("Failed to fetch YT metadata:", e);
+                console.warn("Failed to fetch SC metadata:", e);
             }
         }
     };
@@ -1051,7 +1032,7 @@ function setupEventListeners() {
 
     logoutBtn.onclick = () => {
         currentUser = null;
-        localStorage.removeItem('purelyd-current-user');
+        localStorage.removeItem('purelydsc-current-user');
         userMenu.classList.remove('active');
         init();
     };
@@ -1116,7 +1097,7 @@ function setupEventListeners() {
                 return alert('Usuario o contraseï¿½a incorrectos.');
             }
             currentUser = user;
-            localStorage.setItem('purelyd-current-user', JSON.stringify(currentUser));
+            localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
             authModal.style.display = 'none';
             authForm.reset();
             await init();
@@ -1159,7 +1140,7 @@ function setupEventListeners() {
         // Update user in DB
         await UserDB.updateUser(currentUser);
 
-        localStorage.setItem('purelyd-current-user', JSON.stringify(currentUser));
+        localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
         genreModal.style.display = 'none';
         await init();
     };
@@ -1167,14 +1148,14 @@ function setupEventListeners() {
     addSongForm.onsubmit = async (e) => {
         e.preventDefault();
         const url = document.getElementById('song-url').value;
-        const ytId = getYTId(url);
+        const scId = getSCId(url);
 
         const songData = {
             title: document.getElementById('song-title').value,
             artist: document.getElementById('song-artist').value,
             url: url,
             cover: document.getElementById('song-cover').value,
-            type: ytId ? 'youtube' : 'audio'
+            type: scId ? 'soundcloud' : 'audio'
         };
 
         if (editingSongId) {
@@ -1202,27 +1183,17 @@ function setupEventListeners() {
     playPauseBtn.onclick = togglePlay;
 
     progressBar.oninput = () => {
-        const song = songs[currentSongIndex];
-        if (song.type === 'youtube') {
-            const time = (progressBar.value / 100) * ytPlayer.getDuration();
-            ytPlayer.seekTo(time, true);
-        } else {
-            const time = (progressBar.value / 100) * audioElement.duration;
-            audioElement.currentTime = time;
-        }
+        if (!scWidget || !widgetReady) return;
+        scWidget.getDuration((duration) => {
+            const timeMs = (progressBar.value / 100) * duration;
+            scWidget.seekTo(timeMs);
+        });
     };
 
     volumeSlider.oninput = () => {
         const vol = volumeSlider.value;
-        audioElement.volume = vol / 100;
-        if (ytReady) ytPlayer.setVolume(vol);
-    };
-
-    audioElement.ontimeupdate = updateProgress;
-    audioElement.onended = nextSong;
-    audioElement.onloadedmetadata = () => {
-        if (songs[currentSongIndex].type === 'audio') {
-            totalTimeEl.textContent = formatTime(audioElement.duration);
+        if (scWidget && widgetReady) {
+            scWidget.setVolume(vol); // SC Widget volume is 0-100
         }
     };
 
@@ -1266,30 +1237,46 @@ function setupEventListeners() {
     document.getElementById('next-btn').onclick = nextSong;
     document.getElementById('prev-btn').onclick = prevSong;
 
-    // Start UI update loop for YouTube
-    setInterval(updateProgress, 1000);
+    // Initialize SoundCloud Widget
+    scPlayerIframe = document.getElementById('sc-player');
+    if (scPlayerIframe && window.SC) {
+        scWidget = SC.Widget(scPlayerIframe);
 
-    // Unify state management for native audio element
-    audioElement.onplay = () => {
-        isPlaying = true;
-        userWantsToPlay = true;
-        playPauseBtn.textContent = '?';
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = "playing";
-            updateMediaSessionPositionState();
-        }
-        startKeepAlive();
-    };
+        scWidget.bind(SC.Widget.Events.READY, () => {
+            console.log("SoundCloud Widget Ready");
+            widgetReady = true;
+            scWidget.setVolume(volumeSlider.value);
+        });
 
-    audioElement.onpause = () => {
-        isPlaying = false;
-        playPauseBtn.textContent = '?';
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = "paused";
-            updateMediaSessionPositionState();
-        }
-        stopKeepAlive();
-    };
+        scWidget.bind(SC.Widget.Events.PLAY, () => {
+            isPlaying = true;
+            userWantsToPlay = true;
+            playPauseBtn.textContent = '⏸';
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "playing";
+                updateMediaSessionPositionState();
+            }
+            startKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.PAUSE, () => {
+            isPlaying = false;
+            playPauseBtn.textContent = '▶';
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = "paused";
+                updateMediaSessionPositionState();
+            }
+            stopKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.FINISH, () => {
+            nextSong();
+        });
+
+        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (progressData) => {
+            updateProgress(progressData);
+        });
+    }
 }
 
 // Utility to export all songs for GitHub deployment
@@ -1306,9 +1293,10 @@ async function playSong(index, resumeAtSeconds = 0) {
     const song = songs[index];
     if (!song) return;
 
-    // Stop previous players
-    audioElement.pause();
-    if (ytReady && ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
+    if (!scWidget || !widgetReady) {
+        setStatus("WIDGET NOT READY");
+        return;
+    }
 
     // Update UI
     document.querySelector('.player-song-info .song-name').textContent = song.title;
@@ -1317,143 +1305,60 @@ async function playSong(index, resumeAtSeconds = 0) {
     document.querySelector('.player-cover').style.backgroundImage = `url(${cover})`;
     document.querySelector('.player-cover').style.backgroundSize = 'cover';
 
-    const videoId = getYTId(song.url);
-    if (song.type === 'youtube' || videoId) {
-        if (!videoId) {
-            setStatus("INVALID YOUTUBE ID");
-            return;
-        }
+    setStatus(`LOADING SC_WIDGET: ${song.title}`);
 
-        // Foreground play mode enabled.
-        if (ytReady) {
-            setStatus(`PLAYING YT: ${videoId}`);
+    // Load the permalink URL directly into the official widget
+    scWidget.load(song.url, {
+        auto_play: true,
+        hide_related: true,
+        show_comments: false,
+        show_user: true,
+        show_reposts: false,
+        visual: false
+    });
 
-            // Resilience 13.0: Hard State Reset
-            // 1. Scrub previous state to prevent "Sticky Timestamp" bug
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "none";
-                try {
-                    // Force a zero-state to bridge the gap
-                    navigator.mediaSession.setPositionState({
-                        duration: 120, // Dummy
-                        playbackRate: 0,
-                        position: 0
-                    });
-                } catch (e) { }
-            }
-            lastProgressSyncSec = -1;
-
-            // 2. Warm up web audio stack synchronously
-            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioContext.state === 'suspended') audioContext.resume();
-
-            // 3. Warm up MediaSession with REAL metadata immediately
-            updateMediaSession(song);
-            navigator.mediaSession.playbackState = "playing";
-
-            // 4. Load YouTube (Primary Focus Hunter)
-            if (song.type === 'youtube') kickstartYouTubeVisibility();
-            if (resumeAtSeconds > 0) {
-                ytPlayer.loadVideoById({ videoId: videoId, startSeconds: resumeAtSeconds });
-                console.log(`Resuming at ${resumeAtSeconds}s`);
-            } else {
-                ytPlayer.loadVideoById(videoId);
-            }
-            userWantsToPlay = true;
-            isPlaying = false; // Defer to onPlayerStateChange
-            playPauseBtn.textContent = '⏸';
-        } else {
-            setStatus("WAITING FOR YT PLAYER...");
-            pendingSongId = videoId;
-            userWantsToPlay = true;
-            isPlaying = true;
-            playPauseBtn.textContent = '⏸';
-        }
-    } else {
-        setStatus("PLAYING AUDIO FILE");
-        audioElement.src = song.url;
-        audioElement.play().then(() => {
-            isPlaying = true;
-            updateMediaSessionPositionState();
-            startKeepAlive();
-        }).catch(e => {
-            setStatus("AUDIO ERROR");
-            console.error("Playback error:", e);
-        });
-        userWantsToPlay = true;
-        isPlaying = false;
-        playPauseBtn.textContent = '⏸';
-    }
-
+    // Warm up MediaSession with REAL metadata immediately
     updateMediaSession(song);
 }
 
 function updateMediaSession(song) {
-    if (!('mediaSession' in navigator) || pendingKickstartIndex !== null) return;
+    if (!('mediaSession' in navigator)) return;
 
     navigator.mediaSession.metadata = new MediaMetadata({
         title: song.title,
         artist: song.artist,
-        album: 'Purelyd Music',
+        album: 'Purelyd SC',
         artwork: [
             { src: song.cover || getThumbnail(song), sizes: '512x512', type: 'image/png' }
         ]
     });
 
-    // Basic State
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-    updateMediaSessionPositionState();
 }
 
 function initMediaSessionHandlers() {
-    if (!('mediaSession' in navigator)) return;
+    if (!('mediaSession' in navigator) || !scWidget) return;
 
     const handlers = {
         'play': () => {
-            // Hardware-Direct Play
-            if (pendingKickstartIndex !== null) {
-                nextSong();
-                return;
-            }
             userWantsToPlay = true;
             startKeepAlive();
-            const song = songs[currentSongIndex];
-            if (!song) return;
-            if (song.type === 'youtube' && ytReady) {
-                ytPlayer.playVideo();
-            } else if (song.type === 'audio') {
-                audioElement.play();
-            }
+            scWidget.play();
         },
         'pause': () => {
-            // Hardware-Direct Pause
             userWantsToPlay = false;
-            const song = songs[currentSongIndex];
-            if (!song) return;
-            if (song.type === 'youtube' && ytReady) {
-                ytPlayer.pauseVideo();
-            } else if (song.type === 'audio') {
-                audioElement.pause();
-            }
+            scWidget.pause();
         },
         'previoustrack': () => prevSong(),
         'nexttrack': () => nextSong(),
         'seekbackward': (details) => {
-            const skipTime = details.seekOffset || 10;
-            seekRelative(-skipTime);
+            seekRelative(-(details.seekOffset || 10));
         },
         'seekforward': (details) => {
-            const skipTime = details.seekOffset || 10;
-            seekRelative(skipTime);
+            seekRelative(details.seekOffset || 10);
         },
         'seekto': (details) => {
-            const song = songs[currentSongIndex];
-            if (!song) return;
-            if (details.fastSeek && 'fastSeek' in audioElement && song.type === 'audio') {
-                audioElement.fastSeek(details.seekTime);
-            } else {
-                seekToTime(details.seekTime);
-            }
+            seekToTime(details.seekTime);
         }
     };
 
@@ -1466,35 +1371,14 @@ function initMediaSessionHandlers() {
     }
 }
 
-function updateMediaSessionPositionState() {
+function updateMediaSessionPositionState(currentSec, durationSec) {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-        const song = songs[currentSongIndex];
-        if (!song && pendingKickstartIndex === null) return;
-
-        let duration = 0;
-        let currentTime = 0;
-        let rate = 1;
-
-        // Force YouTube stats if bridge is active
-        if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
-            if (ytReady && ytPlayer.getDuration) {
-                // Hardcode bridge duration to 3s to bypass metadata lag bug
-                duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
-                currentTime = ytPlayer.getCurrentTime();
-                try { rate = ytPlayer.getPlaybackRate() || 1; } catch (e) { }
-            }
-        } else if (song && song.type === 'audio') {
-            duration = audioElement.duration;
-            currentTime = audioElement.currentTime;
-            rate = audioElement.playbackRate || 1;
-        }
-
-        if (duration && !isNaN(duration) && duration > 0 && !isNaN(currentTime)) {
+        if (durationSec > 0 && currentSec !== undefined) {
             try {
                 navigator.mediaSession.setPositionState({
-                    duration: duration,
-                    playbackRate: isPlaying ? rate : 0,
-                    position: Math.min(currentTime, duration)
+                    duration: durationSec,
+                    playbackRate: isPlaying ? 1 : 0,
+                    position: Math.min(currentSec, durationSec)
                 });
             } catch (e) {
                 console.warn("Error updating position state:", e);
@@ -1503,28 +1387,20 @@ function updateMediaSessionPositionState() {
     }
 }
 
-function seekRelative(offset) {
-    const song = songs[currentSongIndex];
-    if (song.type === 'youtube' && ytReady) {
-        ytPlayer.seekTo(ytPlayer.getCurrentTime() + offset, true);
-    } else {
-        audioElement.currentTime += offset;
-    }
-    updateMediaSessionPositionState();
+function seekRelative(offsetSec) {
+    if (!scWidget) return;
+    scWidget.getPosition((currentMs) => {
+        scWidget.seekTo(currentMs + (offsetSec * 1000));
+    });
 }
 
-function seekToTime(time) {
-    const song = songs[currentSongIndex];
-    if (song.type === 'youtube' && ytReady) {
-        ytPlayer.seekTo(time, true);
-    } else {
-        audioElement.currentTime = time;
-    }
+function seekToTime(timeSec) {
+    if (!scWidget) return;
+    scWidget.seekTo(timeSec * 1000);
 }
 
 // Background Keep-Alive Logic
 const silentAudio = document.getElementById('silent-audio');
-// Using a more robust 1-second silent track to avoid aggressive OS throttling
 const SILENT_TRACK = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
 
 function startKeepAlive() {
@@ -1532,15 +1408,12 @@ function startKeepAlive() {
         if (silentAudio.src !== SILENT_TRACK) {
             silentAudio.src = SILENT_TRACK;
             silentAudio.loop = true;
-            silentAudio.volume = 0.001; // Not muted, but nearly inaudible
+            silentAudio.volume = 0.001;
         }
-        // Always try to play, even if already playing (no-op)
         silentAudio.play().catch(e => console.log("Silent audio start suppressed"));
     }
 }
 
-// Global Interaction Unlock: "Warm up" the audio context on first click
-// This makes the app an "active audio process" immediately.
 document.addEventListener('click', () => {
     startKeepAlive();
     initMediaSessionHandlers();
@@ -1557,111 +1430,41 @@ function stopKeepAlive() {
     }
 }
 
-// Ensure silence plays whenever music starts to tell the OS we are active
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        const song = songs[currentSongIndex];
-        if (isPlaying && song && song.type === 'youtube' && ytReady) {
-            // Store current state and timestamp for bridge resume
-            pendingResumeTime = ytPlayer.getCurrentTime() || 0;
-            console.log(`Saving resume time: ${pendingResumeTime}s`);
-            // 1. Stop the original video first to prevent audio overlap
-            ytPlayer.stopVideo();
-            pendingKickstartIndex = currentSongIndex;
-            // 2. Load bridge starting at second 29 (of 30s) for a ~1s bridge
-            ytPlayer.loadVideoById({ videoId: BRIDGE_YOUTUBE_ID, startSeconds: 29 });
-            ytPlayer.playVideo();
-
-            if ('mediaSession' in navigator) {
-                const bridgeTitle = String.fromCodePoint(0x25B6) + " / " + String.fromCodePoint(0x23ED) + " PULSA PLAY PARA RESUMIR";
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: bridgeTitle,
-                    artist: "Sincronizando modo segundo plano...",
-                    album: "Purelyd Bridge",
-                    artwork: [{ src: "https://img.youtube.com/vi/" + BRIDGE_YOUTUBE_ID + "/maxresdefault.jpg", sizes: "512x512", type: "image/png" }]
-                });
-            }
-
-            // Safety timeout: auto-resume after 4s in case ENDED event doesn't fire
-            if (bridgeTimeout) clearTimeout(bridgeTimeout);
-            bridgeTimeout = setTimeout(() => {
-                if (pendingKickstartIndex !== null) {
-                    console.log("Bridge safety timeout: forcing resume");
-                    nextSong();
-                }
-            }, 1000);
-        }
-    } else {
-        const song = songs[currentSongIndex];
-        if (song && pendingKickstartIndex === null) updateMediaSession(song);
-        updateProgress();
-        if (userWantsToPlay && !isPlaying) {
-            if (pendingKickstartIndex !== null) {
-                console.log("Foreground detected during bridge, forcing resumption.");
-                nextSong();
-            } else if (song && song.type === 'youtube' && ytReady) {
-                ytPlayer.playVideo();
-            }
-        }
+    if (userWantsToPlay && !document.hidden && !isPlaying && scWidget) {
+        scWidget.play();
     }
     if (userWantsToPlay) startKeepAlive();
 });
 
 function togglePlay() {
-    const song = songs[currentSongIndex];
-    if (song.type === 'youtube') {
-        const state = ytPlayer.getPlayerState();
-        if (state === YT.PlayerState.PLAYING) {
-            ytPlayer.pauseVideo();
-            userWantsToPlay = false;
-        } else {
-            ytPlayer.playVideo();
-            userWantsToPlay = true;
-        }
-    } else {
-        if (audioElement.paused) {
-            audioElement.play();
-            userWantsToPlay = true;
-        } else {
-            audioElement.pause();
-            userWantsToPlay = false;
-        }
-    }
+    if (!scWidget || !widgetReady) return;
+    scWidget.toggle();
 }
 
-function updateProgress() {
-    const song = songs[currentSongIndex];
-    if (!song && pendingKickstartIndex === null) return;
+function updateProgress(progressData) {
+    if (!progressData) return;
 
-    let current, duration;
+    // progressData contains currentPosition and relativePosition
+    const currentMs = progressData.currentPosition;
 
-    if (pendingKickstartIndex !== null || (song && song.type === 'youtube' && ytReady)) {
-        if (ytReady && ytPlayer.getDuration) {
-            current = ytPlayer.getCurrentTime();
-            // Hardcode bridge duration to 3s
-            duration = (pendingKickstartIndex !== null) ? 3 : ytPlayer.getDuration();
-        }
-    } else if (song && song.type === 'audio') {
-        current = audioElement.currentTime;
-        duration = audioElement.duration;
-    }
+    scWidget.getDuration((durationMs) => {
+        if (durationMs > 0) {
+            const currentSec = currentMs / 1000;
+            const durationSec = durationMs / 1000;
+            const progress = (currentMs / durationMs) * 100;
 
-    if (current !== undefined && duration > 0) {
-        const progress = (current / duration) * 100;
-        progressBar.value = progress;
-        currentTimeEl.textContent = formatTime(current);
-        totalTimeEl.textContent = formatTime(duration);
+            progressBar.value = progress;
+            currentTimeEl.textContent = formatTime(currentSec);
+            totalTimeEl.textContent = formatTime(durationSec);
 
-        // Resilience 13.0: Smooth & Stable Progress Sync
-        const currentSec = Math.floor(current);
-        if (isPlaying && (song.type === 'youtube' || currentSec % 5 === 0)) {
-            // Jitter Guard: Only sync with OS if we haven't synced this specific second yet
-            if (lastProgressSyncSec !== currentSec) {
-                updateMediaSessionPositionState();
-                lastProgressSyncSec = currentSec;
+            // Jitter Guard: Sync with OS MediaSession
+            const currentFloor = Math.floor(currentSec);
+            if (isPlaying && currentFloor % 5 === 0) {
+                updateMediaSessionPositionState(currentSec, durationSec);
             }
         }
-    }
+    });
 }
 
 function formatTime(seconds) {
@@ -1810,7 +1613,7 @@ async function bulkFavorite() {
         const newFavs = await UserDB.toggleFavorite(currentUser.username, id);
         currentUser.favorites = newFavs;
     }
-    localStorage.setItem('purelyd-current-user', JSON.stringify(currentUser));
+    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
     alert('Favoritos actualizados.');
     exitSelectMode();
     renderSongs();

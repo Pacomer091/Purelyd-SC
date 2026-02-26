@@ -1,20 +1,20 @@
 {
-  "name": "Purelyd Music",
-  "short_name": "Purelyd",
-  "description": "Your Music, Your Way.",
+  "name": "Purelyd SC",
+  "short_name": "Purelyd SC",
+  "description": "SoundCloud Integration Clone.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#000000",
-  "theme_color": "#ff0033",
+  "theme_color": "#ff5500",
   "icons": [
     {
-      "src": "icon.png",
+      "src": "favicon.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon.png",
+      "src": "favicon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
