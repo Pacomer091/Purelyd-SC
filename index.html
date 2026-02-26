@@ -4,36 +4,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purelyd SC - SoundCloud Integration</title>
+    <title>Purelyd Music - YouTube Music Clone</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#ff0033">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Purelyd SC">
-    <link rel="apple-touch-icon" href="favicon.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="favicon.png">
+    <meta name="apple-mobile-web-app-title" content="Purelyd">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <!-- Official SoundCloud Widget API -->
-    <script src="https://w.soundcloud.com/player/api.js"></script>
 </head>
 
 <body class="dark-theme">
-    <!-- Hidden Official SoundCloud Player -->
-    <iframe id="sc-player" width="100%" height="166" scrolling="no" frameborder="no" allow="autoplay"
-        style="display:none;"
-        src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/293&amp;color=%23ff5500&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;show_teaser=true"></iframe>
-
     <div class="app-container">
         <div id="sidebar-overlay" class="sidebar-overlay"></div>
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="logo">
-                <img src="favicon.png" alt="Purelyd SC" class="logo-img"
-                    style="border-radius: 8px; width: 40px; height: 40px; display: inline-block; vertical-align: middle; margin-right: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                <span class="logo-text"
-                    style="display: inline-block; vertical-align: middle; font-weight: bold; font-size: 1.2rem;">Purelyd
-                    SC</span>
+                <svg viewBox="0 0 100 100" class="logo-svg">
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#ff0033;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#cc002c;stop-opacity:1" />
+                        </linearGradient>
+                        <filter id="logo-glow">
+                            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+                            <feMerge>
+                                <feMergeNode in="coloredBlur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <circle cx="50" cy="50" r="45" stroke="url(#logo-gradient)" stroke-width="1.5" fill="none"
+                        opacity="0.3" />
+                    <path d="M40 30V70M40 30H60C70 30 70 50 60 50H40" stroke="url(#logo-gradient)" stroke-width="8"
+                        stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#logo-glow)" />
+                </svg>
+                <span class="logo-text">Purelyd</span>
             </div>
             <nav class="nav-links">
                 <a href="#" class="active" id="nav-home"><i class="icon-home"></i> Home</a>
@@ -270,6 +278,10 @@
 
     <audio id="audio-element"></audio>
     <audio id="silent-audio" loop style="display:none;"></audio>
+    <div id="youtube-player"
+        style="position: fixed; top: -1000px; left: -1000px; width: 200px; height: 200px; z-index: -100; opacity: 0.01; pointer-events: none;">
+    </div>
+
     <!-- Context Menu -->
     <div id="context-menu" class="context-menu">
         <div class="context-menu-item" id="menu-play">Reproducir</div>
@@ -282,6 +294,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="db.js"></script>
     <script src="main.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 
 </html>

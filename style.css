@@ -8,8 +8,8 @@
     --card-hover: rgba(255, 255, 255, 0.08);
     --text-primary: #ffffff;
     --text-secondary: #b3b3b3;
-    --accent-red: #ff6600;
-    --accent-glow: rgba(255, 102, 0, 0.3);
+    --accent-red: #ff0033;
+    --accent-glow: rgba(255, 0, 51, 0.3);
     --border-color: rgba(255, 255, 255, 0.08);
 }
 
@@ -307,7 +307,7 @@ body {
     top: 24px;
     left: 24px;
     z-index: 5;
-    background: rgba(255, 102, 0, 0.2);
+    background: rgba(255, 0, 51, 0.2);
     width: 32px;
     height: 32px;
     display: flex;
@@ -315,9 +315,9 @@ body {
     justify-content: center;
     border-radius: 50%;
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 102, 0, 0.3);
+    border: 1px solid rgba(255, 0, 51, 0.3);
     color: var(--accent-red);
-    box-shadow: 0 0 15px rgba(255, 102, 0, 0.3);
+    box-shadow: 0 0 15px rgba(255, 0, 51, 0.3);
     animation: pulse-heart 2s infinite ease-in-out;
 }
 
@@ -651,7 +651,7 @@ button[type="submit"]:hover {
 }
 
 .playlist-item.active {
-    background: rgba(255, 102, 0, 0.1);
+    background: rgba(255, 0, 51, 0.1);
     color: var(--accent-red);
 }
 

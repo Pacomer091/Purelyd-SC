@@ -1,5 +1,5 @@
-﻿const SUPABASE_URL = 'https://kwyzikmhshvsvrtbfiea.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_T4fGDg_5Xhw9uaF8WSEsnA_jlCVSAtB';
+﻿const SUPABASE_URL = 'https://rniicbymwbmdzudichhm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rqMSy5xGulCdFrXG7266nA_m8x4DYqP';
 
 let supabaseClient;
 function getSupabase() {
@@ -15,25 +15,25 @@ function getSupabase() {
 // User Operations
 const UserDB = {
     async addUser(user) {
-        const { error } = await getSupabase().from('sc_users').insert([user]);
+        const { error } = await getSupabase().from('users').insert([user]);
         if (error) throw error;
         return true;
     },
 
     async getUser(username) {
-        const { data, error } = await getSupabase().from('sc_users').select('*').eq('username', username).single();
+        const { data, error } = await getSupabase().from('users').select('*').eq('username', username).single();
         if (error && error.code !== 'PGRST116') throw error; // PGRST116 is 'no rows found'
         return data;
     },
 
     async getAllUsers() {
-        const { data, error } = await getSupabase().from('sc_users').select('*');
+        const { data, error } = await getSupabase().from('users').select('*');
         if (error) throw error;
         return data;
     },
 
     async updateUser(user) {
-        const { error } = await getSupabase().from('sc_users').update(user).eq('username', user.username);
+        const { error } = await getSupabase().from('users').update(user).eq('username', user.username);
         if (error) throw error;
         return true;
     },
@@ -51,7 +51,7 @@ const UserDB = {
             favorites.splice(index, 1);
         }
 
-        const { error } = await getSupabase().from('sc_users').update({ favorites }).eq('username', username);
+        const { error } = await getSupabase().from('users').update({ favorites }).eq('username', username);
         if (error) throw error;
         return favorites;
     }
@@ -61,94 +61,86 @@ const UserDB = {
 const SongDB = {
     async addSong(song, username) {
         const songWithUser = { ...song, username };
-        const { error } = await getSupabase().from('sc_songs').upsert([songWithUser]);
+        const { error } = await getSupabase().from('songs').upsert([songWithUser]);
         if (error) throw error;
         return true;
     },
 
     async getSongsByUser(username) {
-        const { data, error } = await getSupabase().from('sc_songs').select('*').eq('username', username);
+        const { data, error } = await getSupabase().from('songs').select('*').eq('username', username);
         if (error) throw error;
-        return data; // Changed from 'songs' to 'sc_songs' to isolate SoundCloud Library
+        return data;
     },
 
     async getAllSongs() {
-        const { data, error } = await getSupabase().from('sc_songs').select('*').order('created_at', { ascending: false });
-        // NOTE: In an ideal scenario, if sc_songs is empty for the user, we would pull from 'songs' and migrate. We handle this in main.js.
+        const { data, error } = await getSupabase().from('songs').select('*').order('created_at', { ascending: false });
         if (error) throw error;
         return data;
     },
 
     async deleteSong(id) {
-        const { error } = await getSupabase().from('sc_songs').delete().eq('id', id);
+        const { error } = await getSupabase().from('songs').delete().eq('id', id);
         if (error) throw error;
         return true;
     },
 
     async updateSong(song) {
-        const { error } = await getSupabase().from('sc_songs').update(song).eq('id', song.id);
+        const { error } = await getSupabase().from('songs').update(song).eq('id', song.id);
         if (error) throw error;
         return true;
-    },
-
-    // Original DB fallback for migration
-    async getLegacySongsByUser(username) {
-        const { data, error } = await getSupabase().from('songs').select('*').eq('username', username);
-        if (error) throw error;
-        return data;
     }
 };
 
 // Playlist Operations
 const PlaylistDB = {
     async addPlaylist(playlist) {
-        const { data, error } = await getSupabase().from('sc_playlists').insert([playlist]).select().single();
+        const { data, error } = await getSupabase().from('playlists').insert([playlist]).select().single();
         if (error) throw error;
         return data.id;
     },
 
     async getPlaylistsByUser(username) {
-        const { data, error } = await getSupabase().from('sc_playlists').select('*').eq('username', username);
+        const { data, error } = await getSupabase().from('playlists').select('*').eq('username', username);
         if (error) throw error;
         return data;
     },
 
     async addSongToPlaylist(playlistId, songId) {
-        const { data: p, error: getErr } = await getSupabase().from('sc_playlists').select('song_ids').eq('id', playlistId).single();
+        const { data: p, error: getErr } = await getSupabase().from('playlists').select('song_ids').eq('id', playlistId).single();
         if (getErr) throw getErr;
 
         let songIds = p.song_ids || [];
         if (!songIds.includes(songId)) {
             songIds.push(songId);
-            const { error } = await getSupabase().from('sc_playlists').update({ song_ids: songIds }).eq('id', playlistId);
+            const { error } = await getSupabase().from('playlists').update({ song_ids: songIds }).eq('id', playlistId);
             if (error) throw error;
         }
         return true;
     },
 
     async removeSongFromPlaylist(playlistId, songId) {
-        const { data: p, error: getErr } = await getSupabase().from('sc_playlists').select('song_ids').eq('id', playlistId).single();
+        const { data: p, error: getErr } = await getSupabase().from('playlists').select('song_ids').eq('id', playlistId).single();
         if (getErr) throw getErr;
 
         let songIds = (p.song_ids || []).filter(id => id !== songId);
-        const { error } = await getSupabase().from('sc_playlists').update({ song_ids: songIds }).eq('id', playlistId);
+        const { error } = await getSupabase().from('playlists').update({ song_ids: songIds }).eq('id', playlistId);
         if (error) throw error;
         return true;
     },
 
     async getPlaylistSongs(playlistId) {
-        const { data: p, error: getErr } = await getSupabase().from('sc_playlists').select('song_ids').eq('id', playlistId).single();
+        const { data: p, error: getErr } = await getSupabase().from('playlists').select('song_ids').eq('id', playlistId).single();
         if (getErr) throw getErr;
 
         if (!p || !p.song_ids || p.song_ids.length === 0) return [];
 
-        const { data: songs, error: sErr } = await getSupabase().from('sc_songs').select('*').in('id', p.song_ids);
+        const { data: songs, error: sErr } = await getSupabase().from('songs').select('*').in('id', p.song_ids);
         if (sErr) throw sErr;
         return songs;
     },
 
     async deletePlaylist(id) {
-        const { error } = await getSupabase().from('sc_playlists').delete().eq('id', id);
+        const { error } = await getSupabase().from('playlists').delete().eq('id', id);
         if (error) throw error;
         return true;
     }
