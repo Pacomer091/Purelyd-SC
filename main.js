@@ -1,6 +1,7 @@
 ﻿// SoundCloud Official API Config
 const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
 const SC_API_BASE = 'https://api-v2.soundcloud.com';
+const WORKER_URL = 'https://purelydsc.2008qlfta.workers.dev'; // Aségurate de que este es el tuyo
 const DEFAULT_SONGS = [
     {
         id: 1,
@@ -928,17 +929,18 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(lines[0])}`);
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
+                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
                 const data = await response.json();
 
-                if (data.status === 'ok' && data.type === 'playlist' && data.results) {
-                    lines = data.results.map(t => t.url);
+                if (data && data.kind === 'playlist' && data.tracks) {
+                    lines = data.tracks.filter(t => t.streamable).map(t => t.permalink_url);
                     console.log(`Extraction successful: ${lines.length} songs found.`);
                 } else {
                     throw new Error("No se encontraron canciones o no es una playlist válida.");
                 }
             } catch (e) {
-                alert("Error al extraer la playlist. Intenta asegurarte de que tu Worker esté en línea y el enlace sea público.");
+                alert("Error al extraer la playlist. Intenta asegurarte de que el enlace sea público.");
                 console.error("Playlist extraction error:", e);
                 startBulkImportBtn.disabled = false;
                 return;
@@ -952,17 +954,18 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`);
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.status === 'ok' && data.result) {
-                        const track = data.result;
+                    if (data && data.kind === 'track') {
+                        const track = mapSCTrackToPurelyd(data);
                         const newSong = {
                             id: Date.now() + Math.random(),
-                            title: track.title || "Unknown Title",
-                            artist: track.artist || "Unknown Artist",
-                            url: url,
-                            cover: track.cover || "",
+                            title: track.title,
+                            artist: track.artist,
+                            url: track.url,
+                            cover: track.cover,
                             type: 'soundcloud',
                             durationMs: track.durationMs
                         };
@@ -999,11 +1002,12 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const response = await fetch(`${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`);
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.status === 'ok' && data.result) {
-                        const track = data.result;
+                    if (data && data.kind === 'track') {
+                        const track = mapSCTrackToPurelyd(data);
                         if (!songTitleInput.value) songTitleInput.value = track.title || "";
                         if (!songArtistInput.value) songArtistInput.value = track.artist || "";
                         if (!songCoverInput.value) songCoverInput.value = track.cover || "";
