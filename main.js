@@ -1085,34 +1085,39 @@ function setupEventListeners() {
 
         console.log(`Auth attempt: ${isRegisterMode ? 'Register' : 'Login'} for ${username}`);
 
-        if (isRegisterMode) {
-            if (password !== confirmPassword) {
-                return alert('Las contraseï¿½as no coinciden.');
-            }
-            if (await UserDB.getUser(username)) {
-                return alert('Ese nombre de usuario ya existe.');
-            }
+        try {
+            if (isRegisterMode) {
+                if (password !== confirmPassword) {
+                    return alert('Las contraseñas no coinciden.');
+                }
+                if (await UserDB.getUser(username)) {
+                    return alert('Ese nombre de usuario ya existe.');
+                }
 
-            // Temporary user object to start onboarding
-            const newUser = { username, password, email, genres: [] };
-            await UserDB.addUser(newUser);
-            users = await UserDB.getAllUsers();
-            currentUser = newUser;
+                // Temporary user object to start onboarding
+                const newUser = { username, password, email, genres: [] };
+                await UserDB.addUser(newUser);
+                users = await UserDB.getAllUsers();
+                currentUser = newUser;
 
-            authModal.style.display = 'none';
-            authForm.reset();
-            showGenreSelection();
-        } else {
-            const user = await UserDB.getUser(username);
-            if (!user || user.password !== password) {
-                console.warn("Invalid credentials");
-                return alert('Usuario o contraseï¿½a incorrectos.');
+                authModal.style.display = 'none';
+                authForm.reset();
+                showGenreSelection();
+            } else {
+                const user = await UserDB.getUser(username);
+                if (!user || user.password !== password) {
+                    console.warn("Invalid credentials");
+                    return alert('Usuario o contraseña incorrectos.');
+                }
+                currentUser = user;
+                localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+                authModal.style.display = 'none';
+                authForm.reset();
+                await init();
             }
-            currentUser = user;
-            localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
-            authModal.style.display = 'none';
-            authForm.reset();
-            await init();
+        } catch (err) {
+            console.error("Auth Error:", err);
+            alert(`Error inesperado durante la autenticación:\n\n${err.message || err.details || err}\n\nPor favor, contacta con soporte o revisa la consola.`);
         }
     };
 
