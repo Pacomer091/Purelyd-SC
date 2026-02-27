@@ -1051,8 +1051,13 @@ function setupEventListeners() {
     function updateAuthModalUI() {
         document.getElementById('auth-title').textContent = isRegisterMode ? 'Register' : 'Log In';
         document.getElementById('auth-submit').textContent = isRegisterMode ? 'Register' : 'Log In';
-        authSwitch.querySelector('span').textContent = isRegisterMode ? 'Log In' : 'Register';
-        authSwitch.childNodes[0].textContent = isRegisterMode ? 'Already have an account? ' : "Don't have an account? ";
+
+        // Use innerHTML to safely reconstruct the switch text and the span button
+        if (isRegisterMode) {
+            authSwitch.innerHTML = 'Already have an account? <span>Log In</span>';
+        } else {
+            authSwitch.innerHTML = "Don't have an account? <span>Register</span>";
+        }
 
         // Toggle new fields
         authEmail.style.display = isRegisterMode ? 'block' : 'none';
@@ -1061,9 +1066,12 @@ function setupEventListeners() {
         authConfirmPassword.required = isRegisterMode;
     }
 
-    authSwitch.onclick = () => {
-        isRegisterMode = !isRegisterMode;
-        updateAuthModalUI();
+    // Use event delegation for the switch since its innerHTML gets replaced
+    authSwitch.onclick = (e) => {
+        if (e.target.tagName === 'SPAN') {
+            isRegisterMode = !isRegisterMode;
+            updateAuthModalUI();
+        }
     };
 
     closeAuth.onclick = () => authModal.style.display = 'none';
