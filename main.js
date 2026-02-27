@@ -1080,7 +1080,6 @@ function setupEventListeners() {
         e.preventDefault();
         const username = document.getElementById('auth-username').value.trim();
         const password = document.getElementById('auth-password').value.trim();
-        const email = authEmail.value.trim();
         const confirmPassword = authConfirmPassword.value.trim();
 
         console.log(`Auth attempt: ${isRegisterMode ? 'Register' : 'Login'} for ${username}`);
@@ -1095,7 +1094,7 @@ function setupEventListeners() {
                 }
 
                 // Temporary user object to start onboarding
-                const newUser = { username, password, email, genres: [] };
+                const newUser = { username, password, genres: [] };
                 await UserDB.addUser(newUser);
                 users = await UserDB.getAllUsers();
                 currentUser = newUser;
