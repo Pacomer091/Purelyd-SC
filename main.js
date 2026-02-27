@@ -75,7 +75,6 @@ const importProgressText = document.getElementById('import-progress-text');
 const importProgressBar = document.getElementById('import-progress-bar');
 
 // New Auth Elements
-const authEmail = document.getElementById('auth-email');
 const authConfirmPassword = document.getElementById('auth-confirm-password');
 const genreModal = document.getElementById('genre-modal');
 const genreGrid = document.getElementById('genre-grid');
@@ -1060,9 +1059,7 @@ function setupEventListeners() {
         }
 
         // Toggle new fields
-        authEmail.style.display = isRegisterMode ? 'block' : 'none';
         authConfirmPassword.style.display = isRegisterMode ? 'block' : 'none';
-        authEmail.required = isRegisterMode;
         authConfirmPassword.required = isRegisterMode;
     }
 
