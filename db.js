@@ -15,7 +15,9 @@ function getSupabase() {
 // User Operations
 const UserDB = {
     async addUser(user) {
-        const { error } = await getSupabase().from('sc_users').insert([user]);
+        // Sanitize object for Supabase to prevent schema cache errors with extra properties
+        const dbUser = { username: user.username, password: user.password, favorites: user.favorites || [] };
+        const { error } = await getSupabase().from('sc_users').insert([dbUser]);
         if (error) throw error;
         return true;
     },
@@ -33,7 +35,9 @@ const UserDB = {
     },
 
     async updateUser(user) {
-        const { error } = await getSupabase().from('sc_users').update(user).eq('username', user.username);
+        // Sanitize object for Supabase to prevent schema cache errors with extra properties
+        const dbUser = { username: user.username, password: user.password, favorites: user.favorites || [] };
+        const { error } = await getSupabase().from('sc_users').update(dbUser).eq('username', user.username);
         if (error) throw error;
         return true;
     },

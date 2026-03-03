@@ -1,6 +1,4 @@
-﻿// SoundCloud Official API Config
-const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
-const SC_API_BASE = 'https://api-v2.soundcloud.com';
+﻿// SoundCloud Official Worker Config
 const WORKER_URL = 'https://purelydsc.2008qlfta.workers.dev'; // Aségurate de que este es el tuyo
 const DEFAULT_SONGS = [
     {
@@ -515,21 +513,88 @@ function renderSongs() {
         return;
     }
 
-    // SEARCH / PLAYLIST VIEW: Show songs
-    const favIds = currentUser ? (currentUser.favorites || []) : [];
+}
 
-    const filteredSongs = songs.filter(song => {
-        const query = searchTerm.toLowerCase();
-        return song.title.toLowerCase().includes(query) ||
-            song.artist.toLowerCase().includes(query);
+// TRENDING VIEW
+if (currentPlaylistId === 'trending') {
+    // We render a special grid for Trending
+    const mainHeading = document.querySelector('.content-area h1');
+    if (mainHeading) mainHeading.innerHTML = `🔥 Tendencias Top 40`;
+
+    if (!songs || songs.length === 0) {
+        songGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 50px; text-align: center; color: #888;">
+                    <div style="font-size: 2rem; margin-bottom: 10px;" class="spinner">⏳</div>
+                    <style>@keyframes spin { 100% { transform: rotate(360deg); } } .spinner { display: inline-block; animation: spin 1s linear infinite; }</style>
+                    Cargando éxitos en vivo...
+                </div>
+            `;
+        return;
+    }
+
+    const favIds = currentUser ? (currentUser.favorites || []) : [];
+    songGrid.innerHTML = songs.map((song, index) => {
+        const isFav = favIds.includes(song.id);
+        // Rank counter
+        const rank = index + 1;
+        const rankColor = rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : 'var(--text-secondary)';
+
+        return `
+            <div class="song-card" data-index="${index}">
+                <div style="position: absolute; top: -10px; left: -10px; width: 30px; height: 30px; background: #222; color: ${rankColor}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9rem; z-index: 2; border: 2px solid #111; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+                    ${rank}
+                </div>
+                ${!isSelectMode ? `<button class="options-btn" data-index="${index}">⋮</button>` : ''}
+                ${isFav ? `
+                    <div class="fav-badge">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/>
+                        </svg>
+                    </div>
+                ` : ''}
+                <img src="${song.cover || getThumbnail(song)}" alt="${song.title}">
+                <div class="title">${song.title}</div>
+                <div class="artist">${song.artist}</div>
+            </div>
+        `}).join('');
+
+    // Attach clicks
+    document.querySelectorAll('.song-card').forEach(card => {
+        card.onclick = (e) => {
+            if (e.target.closest('.options-btn')) return;
+            const index = parseInt(card.dataset.index);
+            playSong(index);
+        };
     });
 
-    songGrid.innerHTML = filteredSongs.map((song, index) => {
-        const isFav = favIds.includes(song.id);
-        const isSelected = selectedSongIds.includes(song.id);
-        // We need to find the REAL index in the 'songs' array for playSong(index)
-        const realIndex = songs.findIndex(s => s.id === song.id);
-        return `
+    document.querySelectorAll('.options-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showMenu(e, parseInt(btn.dataset.index));
+        };
+    });
+
+    toggleSelectBtn.style.display = 'none';
+    if (isSelectMode) exitSelectMode();
+    return;
+}
+
+// SEARCH / PLAYLIST VIEW: Show songs
+const favIds = currentUser ? (currentUser.favorites || []) : [];
+
+const filteredSongs = songs.filter(song => {
+    const query = searchTerm.toLowerCase();
+    return song.title.toLowerCase().includes(query) ||
+        song.artist.toLowerCase().includes(query);
+});
+
+songGrid.innerHTML = filteredSongs.map((song, index) => {
+    const isFav = favIds.includes(song.id);
+    const isSelected = selectedSongIds.includes(song.id);
+    // We need to find the REAL index in the 'songs' array for playSong(index)
+    const realIndex = songs.findIndex(s => s.id === song.id);
+    return `
         <div class="song-card ${isSelected ? 'selected' : ''}" data-index="${realIndex}">
             ${!isSelectMode ? `<button class="options-btn" data-index="${realIndex}">⋮</button>` : ''}
             ${isFav ? `
@@ -545,39 +610,37 @@ function renderSongs() {
         </div>
     `}).join('');
 
-    // Update Select Button visibility
-    if (currentPlaylistId === 'uploads' && currentUser) {
-        toggleSelectBtn.style.display = 'block';
-    } else {
-        toggleSelectBtn.style.display = 'none';
-        if (isSelectMode) exitSelectMode();
-    }
-
-    // Re-attach card clicks
-    document.querySelectorAll('.song-card').forEach(card => {
-        card.onclick = (e) => {
-            if (e.target.closest('.options-btn')) return;
-            const index = parseInt(card.dataset.index);
-            const song = songs[index];
-
-            if (isSelectMode) {
-                toggleSongSelection(song.id);
-            } else {
-                playSong(index);
-            }
-        };
-    });
-
-    // Re-attach menu clicks
-    document.querySelectorAll('.options-btn').forEach(btn => {
-        btn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showMenu(e, parseInt(btn.dataset.index));
-        };
-    });
+// Update Select Button visibility
+if (currentPlaylistId === 'uploads' && currentUser) {
+    toggleSelectBtn.style.display = 'block';
+} else {
+    toggleSelectBtn.style.display = 'none';
+    if (isSelectMode) exitSelectMode();
 }
 
+// Re-attach card clicks
+document.querySelectorAll('.song-card').forEach(card => {
+    card.onclick = (e) => {
+        if (e.target.closest('.options-btn')) return;
+        const index = parseInt(card.dataset.index);
+        const song = songs[index];
+
+        if (isSelectMode) {
+            toggleSongSelection(song.id);
+        } else {
+            playSong(index);
+        }
+    };
+});
+
+// Re-attach menu clicks
+document.querySelectorAll('.options-btn').forEach(btn => {
+    btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showMenu(e, parseInt(btn.dataset.index));
+    };
+});
 function getThumbnail(song) {
     if (song.cover) return song.cover;
     return 'https://via.placeholder.com/300';
@@ -608,15 +671,14 @@ function mapSCTrackToPurelyd(track) {
 async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
-        const scUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=1`;
-        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(scUrl)}`;
+        const targetUrl = `${WORKER_URL}/search?q=${encodeURIComponent(title)}`;
         const response = await fetch(targetUrl);
 
         if (response.ok) {
             const data = await response.json();
-            const rawTracks = data.collection || [];
-            if (rawTracks.length > 0 && rawTracks[0].streamable) {
-                return mapSCTrackToPurelyd(rawTracks[0]);
+            if (data.status === 'ok' && data.results && data.results.length > 0) {
+                // The worker already formats the results using mapSCTrackToPurelyd
+                return data.results[0];
             }
         }
     } catch (e) {
@@ -642,30 +704,25 @@ function setupEventListeners() {
             if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
 
             try {
-                // To bypass Browser CORS without a custom backend worker, we use a public CORS proxy.
-                const scUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(scUrl)}`;
+                // Point to our secure Cloudflare Worker instead of using the brittle corsproxy hack
+                const targetUrl = `${WORKER_URL}/search?q=${encodeURIComponent(searchTerm)}`;
                 const response = await fetch(targetUrl);
 
                 if (response.ok) {
                     const data = await response.json();
-                    const rawTracks = data.collection || [];
 
-                    // Filter and map to Purelyd format
-                    const tracks = rawTracks
-                        .filter(t => t.kind === 'track')
-                        .map(mapSCTrackToPurelyd);
-
-                    currentPlaylistId = 'search'; // Custom virtual playlist state
-                    songs = tracks;
-
-                    renderSongs();
-                    if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
-                    return;
+                    if (data.status === 'ok') {
+                        currentPlaylistId = 'search'; // Custom virtual playlist state
+                        songs = data.results || [];
+                        renderSongs();
+                        if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
+                        return;
+                    }
+                    throw new Error(data.error || 'Worker returned error status');
                 }
-                throw new Error(`API Error: ${response.status}`);
+                throw new Error(`Worker HTTP Error: ${response.status}`);
             } catch (err) {
-                console.error("Search error:", err);
+                console.error("Search error via Worker:", err);
                 if (mainHeading) mainHeading.textContent = "Error en la búsqueda";
             }
         }
@@ -786,10 +843,45 @@ function setupEventListeners() {
         navHome.classList.add('active');
         navUploads.classList.remove('active');
         navFavorites.classList.remove('active');
+        if (navTrending) navTrending.classList.remove('active');
         await loadUserSongs();
         renderSongs();
         renderPlaylists();
     };
+
+    const navTrending = document.getElementById('nav-trending');
+    if (navTrending) {
+        navTrending.onclick = async (e) => {
+            e.preventDefault();
+            currentPlaylistId = 'trending';
+            navTrending.classList.add('active');
+            navHome.classList.remove('active');
+            navUploads.classList.remove('active');
+            navFavorites.classList.remove('active');
+            // Show loading spinner immediately
+            songs = [];
+            renderSongs();
+
+            try {
+                // Determine user's top genre if possible, or fallback to pop/hiphop
+                const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
+                const targetUrl = `${WORKER_URL}/trending?genre=${encodeURIComponent(genre)}`;
+                const response = await fetch(targetUrl);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'ok') {
+                        songs = data.results || [];
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching trending list:", err);
+            }
+            // Check if user is still on trending view before re-rendering
+            if (currentPlaylistId === 'trending') {
+                renderSongs();
+            }
+        };
+    }
 
     navUploads.onclick = async (e) => {
         e.preventDefault();
@@ -798,6 +890,7 @@ function setupEventListeners() {
         navUploads.classList.add('active');
         navHome.classList.remove('active');
         navFavorites.classList.remove('active');
+        if (navTrending) navTrending.classList.remove('active');
         await loadUserSongs();
         renderSongs();
         renderPlaylists();
@@ -810,6 +903,7 @@ function setupEventListeners() {
         navFavorites.classList.add('active');
         navHome.classList.remove('active');
         navUploads.classList.remove('active');
+        if (navTrending) navTrending.classList.remove('active');
         await loadUserSongs();
         renderSongs();
         renderPlaylists();
@@ -928,15 +1022,15 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
-                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
+                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(lines[0])}`;
+                const response = await fetch(targetUrl);
                 const data = await response.json();
 
-                if (data && data.kind === 'playlist' && data.tracks) {
-                    lines = data.tracks.filter(t => t.streamable).map(t => t.permalink_url);
+                if (data && data.status === 'ok' && data.type === 'playlist') {
+                    lines = data.results.map(t => t.url);
                     console.log(`Extraction successful: ${lines.length} songs found.`);
                 } else {
-                    throw new Error("No se encontraron canciones o no es una playlist válida.");
+                    throw new Error(data.error || "No se encontraron canciones o no es una playlist válida.");
                 }
             } catch (e) {
                 alert("Error al extraer la playlist. Intenta asegurarte de que el enlace sea público.");
@@ -953,12 +1047,12 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
+                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`;
+                const response = await fetch(targetUrl);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data && data.kind === 'track') {
-                        const track = mapSCTrackToPurelyd(data);
+                    if (data && data.status === 'ok' && data.type === 'track') {
+                        const track = data.result;
                         const newSong = {
                             id: Date.now() + Math.random(),
                             title: track.title,
@@ -1001,12 +1095,12 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
+                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`;
+                const response = await fetch(targetUrl);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data && data.kind === 'track') {
-                        const track = mapSCTrackToPurelyd(data);
+                    if (data && data.status === 'ok' && data.type === 'track') {
+                        const track = data.result;
                         if (!songTitleInput.value) songTitleInput.value = track.title || "";
                         if (!songArtistInput.value) songArtistInput.value = track.artist || "";
                         if (!songCoverInput.value) songCoverInput.value = track.cover || "";
