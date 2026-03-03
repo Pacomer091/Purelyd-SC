@@ -1383,52 +1383,63 @@ function setupEventListeners() {
     scPlayerIframe = document.getElementById('sc-player');
     if (scPlayerIframe && window.SC) {
         scWidget = SC.Widget(scPlayerIframe);
-
-        scWidget.bind(SC.Widget.Events.READY, () => {
-            console.log("SoundCloud Widget Ready");
-            widgetReady = true;
-            scWidget.setVolume(volumeSlider.value);
-
-            // En móvil, forzar play() de forma síncrona al estar listo
-            // (sin setTimeout para no romper la cadena de gesto del usuario)
-            if (isLoadingNewSong && userWantsToPlay) {
-                console.log("[Widget] Forzando play() tras READY");
-                scWidget.play();
-            }
-        });
-
-        scWidget.bind(SC.Widget.Events.PLAY, () => {
-            isLoadingNewSong = false; // La nueva canción empezó a reproducirse, limpiar flag
-            isPlaying = true;
-            userWantsToPlay = true;
-            playPauseBtn.textContent = '⏸';
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "playing";
-                updateMediaSessionPositionState();
-            }
-            startKeepAlive();
-        });
-
-        scWidget.bind(SC.Widget.Events.PAUSE, () => {
-            if (isLoadingNewSong) return; // Ignorar PAUSE espurio durante carga
-            isPlaying = false;
-            playPauseBtn.textContent = '▶';
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "paused";
-                updateMediaSessionPositionState();
-            }
-            stopKeepAlive();
-        });
-
-        scWidget.bind(SC.Widget.Events.FINISH, () => {
-            if (isLoadingNewSong) return; // Ignorar FINISH espurio durante carga
-            nextSong();
-        });
-
-        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (progressData) => {
-            updateProgress(progressData);
-        });
+        bindWidgetEvents();
     }
+}
+
+function bindWidgetEvents() {
+    if (!scWidget) return;
+
+    // Limpiar bindings previos para evitar duplicados al reinicializar
+    try { scWidget.unbind(SC.Widget.Events.READY); } catch (e) { }
+    try { scWidget.unbind(SC.Widget.Events.PLAY); } catch (e) { }
+    try { scWidget.unbind(SC.Widget.Events.PAUSE); } catch (e) { }
+    try { scWidget.unbind(SC.Widget.Events.FINISH); } catch (e) { }
+    try { scWidget.unbind(SC.Widget.Events.PLAY_PROGRESS); } catch (e) { }
+
+    scWidget.bind(SC.Widget.Events.READY, () => {
+        console.log("SoundCloud Widget Ready");
+        widgetReady = true;
+        scWidget.setVolume(volumeSlider.value);
+
+        // En móvil, forzar play() al estar listo (auto_play en URL no siempre activa)
+        if (isLoadingNewSong && userWantsToPlay) {
+            console.log("[Widget] Forzando play() tras READY");
+            scWidget.play();
+        }
+    });
+
+    scWidget.bind(SC.Widget.Events.PLAY, () => {
+        isLoadingNewSong = false;
+        isPlaying = true;
+        userWantsToPlay = true;
+        playPauseBtn.textContent = '⏸';
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = "playing";
+            updateMediaSessionPositionState();
+        }
+        startKeepAlive();
+    });
+
+    scWidget.bind(SC.Widget.Events.PAUSE, () => {
+        if (isLoadingNewSong) return;
+        isPlaying = false;
+        playPauseBtn.textContent = '▶';
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = "paused";
+            updateMediaSessionPositionState();
+        }
+        stopKeepAlive();
+    });
+
+    scWidget.bind(SC.Widget.Events.FINISH, () => {
+        if (isLoadingNewSong) return;
+        nextSong();
+    });
+
+    scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (progressData) => {
+        updateProgress(progressData);
+    });
 }
 
 // Utility to export all songs for GitHub deployment
@@ -1445,11 +1456,6 @@ async function playSong(index, resumeAtSeconds = 0) {
     const song = songs[index];
     if (!song) return;
 
-    if (!scWidget || !widgetReady) {
-        setStatus("WIDGET NOT READY");
-        return;
-    }
-
     // Update UI
     document.querySelector('.player-song-info .song-name').textContent = song.title;
     document.querySelector('.player-song-info .artist-name').textContent = song.artist;
@@ -1459,26 +1465,25 @@ async function playSong(index, resumeAtSeconds = 0) {
 
     setStatus(`LOADING SC_WIDGET: ${song.title}`);
 
-    // Activar flag para ignorar eventos PAUSE/FINISH del widget mientras carga
+    // Activar flag para ignorar eventos PAUSE/FINISH espurios
     isLoadingNewSong = true;
+    widgetReady = false;
+    userWantsToPlay = true;
 
-    // Load + play inmediato dentro del contexto de gesto del usuario
-    // (en móvil, play() debe llamarse síncronamente dentro del tap handler)
-    scWidget.load(song.url, {
-        auto_play: true,
-        hide_related: true,
-        show_comments: false,
-        show_user: true,
-        show_reposts: false,
-        visual: false
-    });
-    // Llamar play() síncronamente para desbloquear autoplay en iOS/Android
-    scWidget.play();
+    // ── ESTRATEGIA MÓVIL: reemplazar src del iframe directamente ──
+    // auto_play=true en la URL del embed funciona mejor que scWidget.load() en iOS/Android
+    // porque el navegador lo trata como un embed inicial, no como autoplay programático.
+    const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(song.url)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false&buying=false&liking=false&download=false&sharing=false`;
+    scPlayerIframe.src = embedUrl;
 
-    // Safety timeout: si en 10s no llega el PLAY, desactivar el flag
-    setTimeout(() => { isLoadingNewSong = false; }, 10000);
+    // Reinicializar el widget JS con el nuevo iframe
+    scWidget = SC.Widget(scPlayerIframe);
+    bindWidgetEvents();
 
-    // Warm up MediaSession con metadatos reales
+    // Safety timeout: desactivar flag si la canción no arranca en 15s
+    setTimeout(() => { isLoadingNewSong = false; }, 15000);
+
+    // Warm up MediaSession
     updateMediaSession(song);
 }
 
