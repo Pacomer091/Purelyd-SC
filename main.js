@@ -349,9 +349,19 @@ async function migrateLegacyToSC(username) {
 async function loadUserSongs() {
     if (currentUser) {
         if (currentPlaylistId === 'favorites') {
+            // Refrescar el usuario desde Supabase para tener los favoritos actualizados
+            try {
+                const freshUser = await UserDB.getUser(currentUser.username);
+                if (freshUser) {
+                    currentUser.favorites = freshUser.favorites || [];
+                    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+                }
+            } catch (e) {
+                console.warn('[Favorites] No se pudo refrescar usuario desde Supabase:', e);
+            }
             const allSongs = await SongDB.getAllSongs();
-            const favIds = currentUser.favorites || [];
-            songs = allSongs.filter(s => favIds.includes(s.id));
+            const favIds = (currentUser.favorites || []).map(id => id.toString());
+            songs = allSongs.filter(s => favIds.includes(s.id.toString()));
         } else if (currentPlaylistId === 'uploads') {
             songs = await SongDB.getSongsByUser(currentUser.username);
         } else if (currentPlaylistId) {
