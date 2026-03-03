@@ -672,7 +672,8 @@ function mapSCTrackToPurelyd(track) {
 async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
-        const targetUrl = `${SC_API_BASE}/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
+        const apiPath = `${SC_API_BASE}/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
+        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
         const response = await fetch(targetUrl);
 
         if (response.ok) {
@@ -706,7 +707,9 @@ function setupEventListeners() {
             if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
 
             try {
-                const targetUrl = `${SC_API_BASE}/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
+                // We use corsproxy.io as a compromise: it's a public proxy that fixes the 403 Forbidden error
+                // without requiring the user to deploy their own Cloudflare Worker.
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(`${SC_API_BASE}/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`)}`;
                 const response = await fetch(targetUrl);
 
                 if (response.ok) {
@@ -864,9 +867,9 @@ function setupEventListeners() {
 
             try {
                 // Determine user's top genre if possible, or fallback to pop/hiphop
-                const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
                 const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
-                const targetUrl = `${SC_API_BASE}/tracks?tags=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
+                const apiPath = `${SC_API_BASE}/tracks?tags=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const data = await response.json();
@@ -1023,7 +1026,8 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
                 const response = await fetch(targetUrl);
                 const data = await response.json();
 
@@ -1048,7 +1052,8 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const trackData = await response.json();
@@ -1096,7 +1101,8 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const trackData = await response.json();

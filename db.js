@@ -103,9 +103,17 @@ const SongDB = {
 
     // Original DB fallback for migration
     async getLegacySongsByUser(username) {
-        const { data, error } = await getSupabase().from('songs').select('*').eq('username', username);
-        if (error) throw error;
-        return data;
+        try {
+            const { data, error } = await getSupabase().from('songs').select('*').eq('username', username);
+            if (error) {
+                if (error.code === 'PGRST116' || error.message.includes('relation "public.songs" does not exist')) return [];
+                throw error;
+            }
+            return data;
+        } catch (e) {
+            console.warn("[Migration] Legacy songs table not found, skipping.");
+            return [];
+        }
     }
 };
 
