@@ -70,7 +70,12 @@ const UserDB = {
 // Song Operations
 const SongDB = {
     async addSong(song, username) {
-        const songWithUser = { ...song, username };
+        // Aseguramos que siempre hay un id antes del upsert
+        const songWithUser = {
+            id: song.id ?? crypto.randomUUID(),
+            ...song,
+            username
+        };
         const { error } = await getSupabase().from('sc_songs').upsert([songWithUser]);
         if (error) throw error;
         return true;
@@ -120,7 +125,9 @@ const SongDB = {
 // Playlist Operations
 const PlaylistDB = {
     async addPlaylist(playlist) {
-        const { data, error } = await getSupabase().from('sc_playlists').insert([playlist]).select().single();
+        // Generamos el id en el cliente porque la tabla no tiene default
+        const playlistWithId = { id: crypto.randomUUID(), ...playlist };
+        const { data, error } = await getSupabase().from('sc_playlists').insert([playlistWithId]).select().single();
         if (error) throw error;
         return data.id;
     },
