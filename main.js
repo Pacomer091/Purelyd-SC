@@ -1389,15 +1389,11 @@ function setupEventListeners() {
             widgetReady = true;
             scWidget.setVolume(volumeSlider.value);
 
-            // Si estamos cargando una canción nueva, forzar play()
-            // (necesario en móvil donde auto_play queda bloqueado)
+            // En móvil, forzar play() de forma síncrona al estar listo
+            // (sin setTimeout para no romper la cadena de gesto del usuario)
             if (isLoadingNewSong && userWantsToPlay) {
-                setTimeout(() => {
-                    if (isLoadingNewSong) { // Aún sigue cargando (PLAY no se ha disparado)
-                        console.log("[Widget] Forzando play() tras READY en móvil");
-                        scWidget.play();
-                    }
-                }, 300);
+                console.log("[Widget] Forzando play() tras READY");
+                scWidget.play();
             }
         });
 
@@ -1466,7 +1462,8 @@ async function playSong(index, resumeAtSeconds = 0) {
     // Activar flag para ignorar eventos PAUSE/FINISH del widget mientras carga
     isLoadingNewSong = true;
 
-    // Load the permalink URL directly into the official widget
+    // Load + play inmediato dentro del contexto de gesto del usuario
+    // (en móvil, play() debe llamarse síncronamente dentro del tap handler)
     scWidget.load(song.url, {
         auto_play: true,
         hide_related: true,
@@ -1475,11 +1472,13 @@ async function playSong(index, resumeAtSeconds = 0) {
         show_reposts: false,
         visual: false
     });
+    // Llamar play() síncronamente para desbloquear autoplay en iOS/Android
+    scWidget.play();
 
     // Safety timeout: si en 10s no llega el PLAY, desactivar el flag
     setTimeout(() => { isLoadingNewSong = false; }, 10000);
 
-    // Warm up MediaSession with REAL metadata immediately
+    // Warm up MediaSession con metadatos reales
     updateMediaSession(song);
 }
 
