@@ -1392,13 +1392,27 @@ function setupEventListeners() {
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
             isLoadingNewSong = false;
-            // Cancelar ambos timeouts — la canción arrancó sola, no necesitamos nada más
             clearTimeout(window._loadSongPlayTimeout);
             clearTimeout(window._loadSongResetTimeout);
             isPlaying = true;
             userWantsToPlay = true;
             playPauseBtn.textContent = '⏸';
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+                // Sincronizar inmediatamente para dar punto de base al OS
+                scWidget.getPosition((pos) => {
+                    scWidget.getDuration((dur) => {
+                        if (dur > 0) {
+                            navigator.mediaSession.setPositionState({
+                                duration: dur / 1000,
+                                playbackRate: 1,
+                                position: pos / 1000
+                            });
+                        }
+                    });
+                });
+            }
             startKeepAlive();
         });
 
@@ -1406,7 +1420,22 @@ function setupEventListeners() {
             if (isLoadingNewSong) return;
             isPlaying = false;
             playPauseBtn.textContent = '▶';
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'paused';
+                // Al pausar, poner playbackRate: 0 para que el contador nativo se detenga
+                scWidget.getPosition((pos) => {
+                    scWidget.getDuration((dur) => {
+                        if (dur > 0) {
+                            navigator.mediaSession.setPositionState({
+                                duration: dur / 1000,
+                                playbackRate: 0,
+                                position: pos / 1000
+                            });
+                        }
+                    });
+                });
+            }
             stopKeepAlive();
         });
 
@@ -1525,6 +1554,15 @@ function updateMediaSession(song) {
     });
 
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+    // Si tenemos la duración de la BD, inicializar el estado de posición ya mismo
+    if ('setPositionState' in navigator.mediaSession && song.durationMs) {
+        navigator.mediaSession.setPositionState({
+            duration: song.durationMs / 1000,
+            playbackRate: isPlaying ? 1 : 0,
+            position: 0
+        });
+    }
 }
 
 function initMediaSessionHandlers() {
