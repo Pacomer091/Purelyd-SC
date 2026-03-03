@@ -1441,6 +1441,9 @@ function setupEventListeners() {
 
         scWidget.bind(SC.Widget.Events.FINISH, () => {
             if (isLoadingNewSong) return;
+            // IMPORTANTE PARA MÓVIL: activar el audio silencioso ANTES de cambiar
+            // para que el navegador no pause la ejecución de la app al detectar silencio.
+            startKeepAlive();
             nextSong();
         });
 
@@ -1451,15 +1454,20 @@ function setupEventListeners() {
                 currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
             if (totalTimeEl && data.duration > 0)
                 totalTimeEl.textContent = formatTime(data.duration / 1000);
-            // Sincronizar la barra del reproductor nativo del móvil
-            if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-                try {
-                    navigator.mediaSession.setPositionState({
-                        duration: data.duration / 1000,
-                        playbackRate: 1,
-                        position: Math.min(data.currentPosition / 1000, data.duration / 1000)
-                    });
-                } catch (e) { /* ignorar si no está soportado */ }
+
+            // Sincronización throttled con el OS (cada 2 segundos) para evitar lag
+            const now = Date.now();
+            if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
+                if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: data.duration / 1000,
+                            playbackRate: 1,
+                            position: Math.min(data.currentPosition / 1000, data.duration / 1000)
+                        });
+                        window._lastMSUpdate = now;
+                    } catch (e) { /* ignore */ }
+                }
             }
         });
 
@@ -1646,6 +1654,15 @@ function stopKeepAlive() {
         silentAudio.pause();
     }
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (userWantsToPlay && !document.hidden && !isPlaying && scWidget) {
+        // Si el usuario quería reproducir pero el navegador lo pausó (ej. al salir de app),
+        // intentar darle un 'poke' al volver a entrar
+        scWidget.play();
+    }
+    if (userWantsToPlay) startKeepAlive();
+});
 
 function togglePlay() {
     if (!scWidget || !widgetReady) return;
