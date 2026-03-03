@@ -1506,6 +1506,7 @@ async function playSong(index) {
 
     // Bloquear eventos espurios del widget durante el cambio de canción
     isLoadingNewSong = true;
+    isPlaying = false; // Resetear estado de reproducción hasta que llegue el evento PLAY
     userWantsToPlay = true;
 
     scWidget.load(song.url, {
@@ -1529,13 +1530,14 @@ async function playSong(index) {
 
     // SEGURIDAD: si PLAY nunca llega (ej. móvil sin gesto de usuario),
     // resetear el flag para que la app no quede congelada.
-    // El usuario puede pulsar ▶ manualmente después.
     window._loadSongResetTimeout = setTimeout(() => {
         if (isLoadingNewSong) {
-            console.warn('[SC] PLAY no llegó en 5s — reseteando flag para desbloquear app');
+            console.warn('[SC] PLAY no llegó en 3s — reseteando flag para desbloquear app');
             isLoadingNewSong = false;
+            // Forzar actualización de UI si el autoplay falló
+            playPauseBtn.textContent = '▶';
         }
-    }, 5000);
+    }, 3000);
 
     updateMediaSession(song);
 }
