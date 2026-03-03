@@ -1379,62 +1379,50 @@ function setupEventListeners() {
     document.getElementById('next-btn').onclick = nextSong;
     document.getElementById('prev-btn').onclick = prevSong;
 
-    // Initialize SoundCloud Widget
+    // Initialize SoundCloud Widget - eventos se bindan UNA SOLA VEZ
     scPlayerIframe = document.getElementById('sc-player');
     if (scPlayerIframe && window.SC) {
         scWidget = SC.Widget(scPlayerIframe);
-        bindWidgetEvents();
+
+        scWidget.bind(SC.Widget.Events.READY, () => {
+            console.log('[SC] Widget Ready');
+            widgetReady = true;
+            scWidget.setVolume(volumeSlider.value);
+        });
+
+        scWidget.bind(SC.Widget.Events.PLAY, () => {
+            isLoadingNewSong = false; // La canción empezó a reproducirse
+            isPlaying = true;
+            userWantsToPlay = true;
+            playPauseBtn.textContent = '⏸';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            startKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.PAUSE, () => {
+            if (isLoadingNewSong) return; // Ignorar PAUSE espurio durante cambio de canción
+            isPlaying = false;
+            playPauseBtn.textContent = '▶';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            stopKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.FINISH, () => {
+            if (isLoadingNewSong) return; // Ignorar FINISH espurio durante cambio de canción
+            nextSong();
+        });
+
+        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
+            if (progressBar && data.duration > 0) {
+                progressBar.value = (data.currentPosition / data.duration) * 100;
+                if (currentTimeEl) currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
+                if (totalTimeEl) totalTimeEl.textContent = formatTime(data.duration / 1000);
+                updateMediaSessionPositionState(data.currentPosition / 1000, data.duration / 1000);
+            }
+        });
     }
 }
 
-function bindWidgetEvents() {
-    if (!scWidget) return;
-
-    // Limpiar bindings previos para evitar duplicados al reinicializar
-    try { scWidget.unbind(SC.Widget.Events.READY); } catch (e) { }
-    try { scWidget.unbind(SC.Widget.Events.PLAY); } catch (e) { }
-    try { scWidget.unbind(SC.Widget.Events.PAUSE); } catch (e) { }
-    try { scWidget.unbind(SC.Widget.Events.FINISH); } catch (e) { }
-    try { scWidget.unbind(SC.Widget.Events.PLAY_PROGRESS); } catch (e) { }
-
-    scWidget.bind(SC.Widget.Events.READY, () => {
-        console.log("SoundCloud Widget Ready");
-        widgetReady = true;
-        scWidget.setVolume(volumeSlider.value);
-    });
-
-    scWidget.bind(SC.Widget.Events.PLAY, () => {
-        isLoadingNewSong = false;
-        isPlaying = true;
-        userWantsToPlay = true;
-        playPauseBtn.textContent = '⏸';
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = "playing";
-            updateMediaSessionPositionState();
-        }
-        startKeepAlive();
-    });
-
-    scWidget.bind(SC.Widget.Events.PAUSE, () => {
-        if (isLoadingNewSong) return;
-        isPlaying = false;
-        playPauseBtn.textContent = '▶';
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = "paused";
-            updateMediaSessionPositionState();
-        }
-        stopKeepAlive();
-    });
-
-    scWidget.bind(SC.Widget.Events.FINISH, () => {
-        if (isLoadingNewSong) return;
-        nextSong();
-    });
-
-    scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (progressData) => {
-        updateProgress(progressData);
-    });
-}
 
 // Utility to export all songs for GitHub deployment
 async function exportAllSongs() {
@@ -1445,7 +1433,7 @@ async function exportAllSongs() {
     alert("Lista de canciones exportada a la consola (F12). Copiamela para incluirla en el despliegue.");
 }
 
-async function playSong(index, resumeAtSeconds = 0) {
+async function playSong(index) {
     currentSongIndex = index;
     const song = songs[index];
     if (!song) return;
@@ -1457,16 +1445,15 @@ async function playSong(index, resumeAtSeconds = 0) {
     document.querySelector('.player-cover').style.backgroundImage = `url(${cover})`;
     document.querySelector('.player-cover').style.backgroundSize = 'cover';
 
-    setStatus(`LOADING: ${song.title}`);
+    setStatus(`▶ ${song.title}`);
 
     if (!scWidget || !widgetReady) {
-        // Widget no listo aún — esperar e intentar de nuevo
-        setStatus("Esperando widget...");
-        setTimeout(() => playSong(index, resumeAtSeconds), 500);
+        setStatus('Esperando widget...');
+        setTimeout(() => playSong(index), 500);
         return;
     }
 
-    // Activar flag para ignorar eventos PAUSE/FINISH espurios durante la carga
+    // Bloquear eventos espurios del widget durante el cambio de canción
     isLoadingNewSong = true;
     userWantsToPlay = true;
 
@@ -1479,8 +1466,11 @@ async function playSong(index, resumeAtSeconds = 0) {
         visual: false
     });
 
-    // Safety timeout: desactivar flag si PLAY no llega en 12s
-    setTimeout(() => { isLoadingNewSong = false; }, 12000);
+    // Si en 15s no llega el evento PLAY, limpiar el flag igualmente
+    clearTimeout(window._loadSongTimeout);
+    window._loadSongTimeout = setTimeout(() => {
+        isLoadingNewSong = false;
+    }, 15000);
 
     updateMediaSession(song);
 }
