@@ -16,7 +16,13 @@ function getSupabase() {
 const UserDB = {
     async addUser(user) {
         // Sanitize object for Supabase to prevent schema cache errors with extra properties
-        const dbUser = { username: user.username, password: user.password, favorites: user.favorites || [] };
+        // Generate a UUID locally in case the live Supabase SQL schema is missing the uuid_generate_v4() default
+        const dbUser = {
+            id: crypto.randomUUID(),
+            username: user.username,
+            password: user.password,
+            favorites: user.favorites || []
+        };
         const { error } = await getSupabase().from('sc_users').insert([dbUser]);
         if (error) throw error;
         return true;
