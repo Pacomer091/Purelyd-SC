@@ -1391,7 +1391,9 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
-            isLoadingNewSong = false; // La canción empezó a reproducirse
+            isLoadingNewSong = false;
+            // Cancelar el timeout de play() manual — la canción ya arrancó sola
+            clearTimeout(window._loadSongTimeout);
             isPlaying = true;
             userWantsToPlay = true;
             playPauseBtn.textContent = '⏸';
@@ -1400,7 +1402,7 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.PAUSE, () => {
-            if (isLoadingNewSong) return; // Ignorar PAUSE espurio durante cambio de canción
+            if (isLoadingNewSong) return;
             isPlaying = false;
             playPauseBtn.textContent = '▶';
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -1408,21 +1410,29 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.FINISH, () => {
-            if (isLoadingNewSong) return; // Ignorar FINISH espurio durante cambio de canción
+            if (isLoadingNewSong) return;
             nextSong();
         });
 
         scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
             if (!progressBar) return;
-            // relativePosition (0-1) siempre disponible, más fiable que currentPosition/duration
             progressBar.value = (data.relativePosition || 0) * 100;
             if (currentTimeEl && data.currentPosition != null)
                 currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
             if (totalTimeEl && data.duration > 0)
                 totalTimeEl.textContent = formatTime(data.duration / 1000);
-            if (data.duration > 0)
-                updateMediaSessionPositionState(data.currentPosition / 1000, data.duration / 1000);
+            // Sincronizar la barra del reproductor nativo del móvil
+            if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                try {
+                    navigator.mediaSession.setPositionState({
+                        duration: data.duration / 1000,
+                        playbackRate: 1,
+                        position: Math.min(data.currentPosition / 1000, data.duration / 1000)
+                    });
+                } catch (e) { /* ignorar si no está soportado */ }
+            }
         });
+
     }
 }
 
