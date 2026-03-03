@@ -1,6 +1,32 @@
 ﻿// SoundCloud Official Direct API
 const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
 const SC_API_BASE = 'https://api-v2.soundcloud.com';
+
+// CORS Proxy Pool - se intentan en orden hasta que uno funcione
+const CORS_PROXIES = [
+    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
+async function fetchSCApi(apiPath) {
+    for (const proxy of CORS_PROXIES) {
+        try {
+            const proxyUrl = proxy(apiPath);
+            const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+            if (response.ok) {
+                const text = await response.text();
+                // Algunos proxies devuelven error en el body aunque status sea 200
+                if (text.startsWith('{') || text.startsWith('[')) {
+                    return JSON.parse(text);
+                }
+            }
+        } catch (e) {
+            console.warn(`[SC Proxy] Proxy falló, intentando siguiente...`, e.message);
+        }
+    }
+    throw new Error('Todos los proxies CORS fallaron. Comprueba tu conexión.');
+}
 const DEFAULT_SONGS = [
     {
         id: 1,
@@ -673,16 +699,11 @@ async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
         const apiPath = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
-        const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-        const response = await fetch(targetUrl);
-
-        if (response.ok) {
-            const data = await response.json();
-            const tracks = Array.isArray(data) ? data : (data.collection || []);
-            const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
-            if (validTracks.length > 0) {
-                return mapSCTrackToPurelyd(validTracks[0]);
-            }
+        const data = await fetchSCApi(apiPath);
+        const tracks = Array.isArray(data) ? data : (data.collection || []);
+        const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
+        if (validTracks.length > 0) {
+            return mapSCTrackToPurelyd(validTracks[0]);
         }
     } catch (e) {
         console.warn(`[Auto-Migration] Failed to find SC match for: ${title}`);
@@ -707,26 +728,20 @@ function setupEventListeners() {
             if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
 
             try {
-                // Using a CORS proxy to bypass SoundCloud's browser restrictions.
+                // Usando proxy CORS con fallback automático
                 const apiPath = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
-                const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-                const response = await fetch(targetUrl);
+                const data = await fetchSCApi(apiPath);
+                const tracks = Array.isArray(data) ? data : (data.collection || []);
+                const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
 
-                if (response.ok) {
-                    const data = await response.json();
-                    const tracks = Array.isArray(data) ? data : (data.collection || []);
-                    const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
-
-                    currentPlaylistId = 'search';
-                    songs = validTracks.map(mapSCTrackToPurelyd);
-                    renderSongs();
-                    if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
-                    return;
-                }
-                throw new Error(`SoundCloud API HTTP Error: ${response.status}`);
+                currentPlaylistId = 'search';
+                songs = validTracks.map(mapSCTrackToPurelyd);
+                renderSongs();
+                if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
+                return;
             } catch (err) {
                 console.error("Search error:", err);
-                if (mainHeading) mainHeading.textContent = "Error en la búsqueda";
+                if (mainHeading) mainHeading.textContent = "Error en la búsqueda. Inténtalo de nuevo.";
             }
         }
     });
@@ -870,14 +885,10 @@ function setupEventListeners() {
                 const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
                 const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
                 const apiPath = `${SC_API_BASE}/search/tracks?q=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
-                const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-                const response = await fetch(targetUrl);
-                if (response.ok) {
-                    const data = await response.json();
-                    let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
-                    tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
-                    songs = tracks.map(mapSCTrackToPurelyd);
-                }
+                const data = await fetchSCApi(apiPath);
+                let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
+                tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
+                songs = tracks.map(mapSCTrackToPurelyd);
             } catch (err) {
                 console.error("Error fetching trending list:", err);
             }
@@ -1028,9 +1039,7 @@ function setupEventListeners() {
 
             try {
                 const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-                const response = await fetch(targetUrl);
-                const data = await response.json();
+                const data = await fetchSCApi(apiPath);
 
                 if (data && data.kind === 'playlist' && data.tracks) {
                     lines = data.tracks.map(t => t.permalink_url);
@@ -1054,24 +1063,20 @@ function setupEventListeners() {
 
             try {
                 const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-                const response = await fetch(targetUrl);
-                if (response.ok) {
-                    const trackData = await response.json();
-                    if (trackData && trackData.kind === 'track') {
-                        const track = mapSCTrackToPurelyd(trackData);
-                        const newSong = {
-                            id: Date.now() + Math.random(),
-                            title: track.title,
-                            artist: track.artist,
-                            url: track.url,
-                            cover: track.cover,
-                            type: 'soundcloud',
-                            durationMs: track.durationMs
-                        };
-                        await SongDB.addSong(newSong, currentUser.username);
-                        importedCount++;
-                    }
+                const trackData = await fetchSCApi(apiPath);
+                if (trackData && trackData.kind === 'track') {
+                    const track = mapSCTrackToPurelyd(trackData);
+                    const newSong = {
+                        id: Date.now() + Math.random(),
+                        title: track.title,
+                        artist: track.artist,
+                        url: track.url,
+                        cover: track.cover,
+                        type: 'soundcloud',
+                        durationMs: track.durationMs
+                    };
+                    await SongDB.addSong(newSong, currentUser.username);
+                    importedCount++;
                 }
             } catch (e) {
                 console.error("Error importing:", url, e);
@@ -1103,18 +1108,15 @@ function setupEventListeners() {
             console.log("Resolving SC metadata for:", url);
             try {
                 const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiPath)}`;
-                const response = await fetch(targetUrl);
-                if (response.ok) {
-                    const trackData = await response.json();
-                    if (trackData && trackData.kind === 'track') {
-                        const track = mapSCTrackToPurelyd(trackData);
-                        songTitleInput.value = track.title;
-                        songArtistInput.value = track.artist;
-                        if (track.cover && track.cover.trim() !== "") {
-                            songCoverInput.value = track.cover;
-                        } console.log("Metadata auto-filled");
+                const trackData = await fetchSCApi(apiPath);
+                if (trackData && trackData.kind === 'track') {
+                    const track = mapSCTrackToPurelyd(trackData);
+                    songTitleInput.value = track.title;
+                    songArtistInput.value = track.artist;
+                    if (track.cover && track.cover.trim() !== "") {
+                        songCoverInput.value = track.cover;
                     }
+                    console.log("Metadata auto-filled");
                 }
             } catch (e) {
                 console.warn("Failed to fetch SC metadata:", e);
