@@ -1,5 +1,6 @@
-﻿// SoundCloud Official Worker Config
-const WORKER_URL = 'https://purelydsc.2008qlfta.workers.dev'; // Aségurate de que este es el tuyo
+﻿// SoundCloud Official Direct API
+const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
+const SC_API_BASE = 'https://api.soundcloud.com';
 const DEFAULT_SONGS = [
     {
         id: 1,
@@ -671,14 +672,15 @@ function mapSCTrackToPurelyd(track) {
 async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
-        const targetUrl = `${WORKER_URL}/search?q=${encodeURIComponent(title)}`;
+        const targetUrl = `${SC_API_BASE}/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
         const response = await fetch(targetUrl);
 
         if (response.ok) {
             const data = await response.json();
-            if (data.status === 'ok' && data.results && data.results.length > 0) {
-                // The worker already formats the results using mapSCTrackToPurelyd
-                return data.results[0];
+            const tracks = Array.isArray(data) ? data : (data.collection || []);
+            const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
+            if (validTracks.length > 0) {
+                return mapSCTrackToPurelyd(validTracks[0]);
             }
         }
     } catch (e) {
@@ -704,23 +706,21 @@ function setupEventListeners() {
             if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
 
             try {
-                // Point to our secure Cloudflare Worker instead of using the brittle corsproxy hack
-                const targetUrl = `${WORKER_URL}/search?q=${encodeURIComponent(searchTerm)}`;
+                const targetUrl = `${SC_API_BASE}/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
                 const response = await fetch(targetUrl);
 
                 if (response.ok) {
                     const data = await response.json();
+                    const tracks = Array.isArray(data) ? data : (data.collection || []);
+                    const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
 
-                    if (data.status === 'ok') {
-                        currentPlaylistId = 'search'; // Custom virtual playlist state
-                        songs = data.results || [];
-                        renderSongs();
-                        if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
-                        return;
-                    }
-                    throw new Error(data.error || 'Worker returned error status');
+                    currentPlaylistId = 'search';
+                    songs = validTracks.map(mapSCTrackToPurelyd);
+                    renderSongs();
+                    if (mainHeading) mainHeading.innerHTML = `Resultados para: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>`;
+                    return;
                 }
-                throw new Error(`Worker HTTP Error: ${response.status}`);
+                throw new Error(`SoundCloud API HTTP Error: ${response.status}`);
             } catch (err) {
                 console.error("Search error via Worker:", err);
                 if (mainHeading) mainHeading.textContent = "Error en la búsqueda";
@@ -865,13 +865,14 @@ function setupEventListeners() {
             try {
                 // Determine user's top genre if possible, or fallback to pop/hiphop
                 const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
-                const targetUrl = `${WORKER_URL}/trending?genre=${encodeURIComponent(genre)}`;
+                const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
+                const targetUrl = `${SC_API_BASE}/tracks?tags=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.status === 'ok') {
-                        songs = data.results || [];
-                    }
+                    let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
+                    tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
+                    songs = tracks.map(mapSCTrackToPurelyd);
                 }
             } catch (err) {
                 console.error("Error fetching trending list:", err);
@@ -1022,15 +1023,15 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(lines[0])}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 const data = await response.json();
 
-                if (data && data.status === 'ok' && data.type === 'playlist') {
-                    lines = data.results.map(t => t.url);
+                if (data && data.kind === 'playlist' && data.tracks) {
+                    lines = data.tracks.map(t => t.permalink_url);
                     console.log(`Extraction successful: ${lines.length} songs found.`);
                 } else {
-                    throw new Error(data.error || "No se encontraron canciones o no es una playlist válida.");
+                    throw new Error("No se encontraron canciones o no es una playlist válida.");
                 }
             } catch (e) {
                 alert("Error al extraer la playlist. Intenta asegurarte de que el enlace sea público.");
@@ -1047,12 +1048,12 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.status === 'ok' && data.type === 'track') {
-                        const track = data.result;
+                    const trackData = await response.json();
+                    if (trackData && trackData.kind === 'track') {
+                        const track = mapSCTrackToPurelyd(trackData);
                         const newSong = {
                             id: Date.now() + Math.random(),
                             title: track.title,
@@ -1095,16 +1096,17 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const targetUrl = `${WORKER_URL}/resolve?url=${encodeURIComponent(url)}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.status === 'ok' && data.type === 'track') {
-                        const track = data.result;
-                        if (!songTitleInput.value) songTitleInput.value = track.title || "";
-                        if (!songArtistInput.value) songArtistInput.value = track.artist || "";
-                        if (!songCoverInput.value) songCoverInput.value = track.cover || "";
-                        console.log("Metadata auto-filled");
+                    const trackData = await response.json();
+                    if (trackData && trackData.kind === 'track') {
+                        const track = mapSCTrackToPurelyd(trackData);
+                        songTitleInput.value = track.title;
+                        songArtistInput.value = track.artist;
+                        if (track.cover && track.cover.trim() !== "") {
+                            songCoverInput.value = track.cover;
+                        } console.log("Metadata auto-filled");
                     }
                 }
             } catch (e) {
