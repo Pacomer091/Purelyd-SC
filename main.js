@@ -1401,12 +1401,6 @@ function bindWidgetEvents() {
         console.log("SoundCloud Widget Ready");
         widgetReady = true;
         scWidget.setVolume(volumeSlider.value);
-
-        // En móvil, forzar play() al estar listo (auto_play en URL no siempre activa)
-        if (isLoadingNewSong && userWantsToPlay) {
-            console.log("[Widget] Forzando play() tras READY");
-            scWidget.play();
-        }
     });
 
     scWidget.bind(SC.Widget.Events.PLAY, () => {
@@ -1463,29 +1457,34 @@ async function playSong(index, resumeAtSeconds = 0) {
     document.querySelector('.player-cover').style.backgroundImage = `url(${cover})`;
     document.querySelector('.player-cover').style.backgroundSize = 'cover';
 
-    setStatus(`LOADING SC_WIDGET: ${song.title}`);
+    setStatus(`LOADING: ${song.title}`);
 
-    // Activar flag para ignorar eventos PAUSE/FINISH espurios
+    if (!scWidget || !widgetReady) {
+        // Widget no listo aún — esperar e intentar de nuevo
+        setStatus("Esperando widget...");
+        setTimeout(() => playSong(index, resumeAtSeconds), 500);
+        return;
+    }
+
+    // Activar flag para ignorar eventos PAUSE/FINISH espurios durante la carga
     isLoadingNewSong = true;
-    widgetReady = false;
     userWantsToPlay = true;
 
-    // ── ESTRATEGIA MÓVIL: reemplazar src del iframe directamente ──
-    // auto_play=true en la URL del embed funciona mejor que scWidget.load() en iOS/Android
-    // porque el navegador lo trata como un embed inicial, no como autoplay programático.
-    const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(song.url)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false&buying=false&liking=false&download=false&sharing=false`;
-    scPlayerIframe.src = embedUrl;
+    scWidget.load(song.url, {
+        auto_play: true,
+        hide_related: true,
+        show_comments: false,
+        show_user: true,
+        show_reposts: false,
+        visual: false
+    });
 
-    // Reinicializar el widget JS con el nuevo iframe
-    scWidget = SC.Widget(scPlayerIframe);
-    bindWidgetEvents();
+    // Safety timeout: desactivar flag si PLAY no llega en 12s
+    setTimeout(() => { isLoadingNewSong = false; }, 12000);
 
-    // Safety timeout: desactivar flag si la canción no arranca en 15s
-    setTimeout(() => { isLoadingNewSong = false; }, 15000);
-
-    // Warm up MediaSession
     updateMediaSession(song);
 }
+
 
 function updateMediaSession(song) {
     if (!('mediaSession' in navigator)) return;
