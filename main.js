@@ -1388,6 +1388,11 @@ function setupEventListeners() {
             console.log('[SC] Widget Ready');
             widgetReady = true;
             scWidget.setVolume(volumeSlider.value);
+            // Arrancar la canción cuando el widget esté listo
+            // En móvil Chrome, play() desde READY hereda la activación del tap del usuario
+            if (userWantsToPlay && isLoadingNewSong) {
+                scWidget.play();
+            }
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
@@ -1421,6 +1426,14 @@ function setupEventListeners() {
             }
         });
     }
+}
+
+// Convierte ms o segundos a formato mm:ss
+function formatTime(secs) {
+    if (!secs || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 
@@ -1458,7 +1471,7 @@ async function playSong(index) {
     userWantsToPlay = true;
 
     scWidget.load(song.url, {
-        auto_play: true,
+        auto_play: false,   // Lo manejamos manualmente en READY para mejor compatibilidad móvil
         hide_related: true,
         show_comments: false,
         show_user: true,
