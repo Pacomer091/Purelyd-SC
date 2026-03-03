@@ -1388,6 +1388,17 @@ function setupEventListeners() {
             console.log("SoundCloud Widget Ready");
             widgetReady = true;
             scWidget.setVolume(volumeSlider.value);
+
+            // Si estamos cargando una canción nueva, forzar play()
+            // (necesario en móvil donde auto_play queda bloqueado)
+            if (isLoadingNewSong && userWantsToPlay) {
+                setTimeout(() => {
+                    if (isLoadingNewSong) { // Aún sigue cargando (PLAY no se ha disparado)
+                        console.log("[Widget] Forzando play() tras READY en móvil");
+                        scWidget.play();
+                    }
+                }, 300);
+            }
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
