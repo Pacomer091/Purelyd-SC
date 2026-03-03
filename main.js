@@ -1413,12 +1413,15 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
-            if (progressBar && data.duration > 0) {
-                progressBar.value = (data.currentPosition / data.duration) * 100;
-                if (currentTimeEl) currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
-                if (totalTimeEl) totalTimeEl.textContent = formatTime(data.duration / 1000);
+            if (!progressBar) return;
+            // relativePosition (0-1) siempre disponible, más fiable que currentPosition/duration
+            progressBar.value = (data.relativePosition || 0) * 100;
+            if (currentTimeEl && data.currentPosition != null)
+                currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
+            if (totalTimeEl && data.duration > 0)
+                totalTimeEl.textContent = formatTime(data.duration / 1000);
+            if (data.duration > 0)
                 updateMediaSessionPositionState(data.currentPosition / 1000, data.duration / 1000);
-            }
         });
     }
 }
@@ -1474,11 +1477,15 @@ async function playSong(index) {
         visual: false
     });
 
-    // Si en 15s no llega el evento PLAY, limpiar el flag igualmente
+    // En móvil Chrome, la activación de usuario del tap persiste ~5s.
+    // Llamar play() con este delay permite que el widget cargue el audio
+    // y luego reproducir dentro de la ventana, desbloqueando el autoplay.
     clearTimeout(window._loadSongTimeout);
     window._loadSongTimeout = setTimeout(() => {
-        isLoadingNewSong = false;
-    }, 15000);
+        if (userWantsToPlay && isLoadingNewSong) {
+            scWidget.play();
+        }
+    }, 800);
 
     updateMediaSession(song);
 }
