@@ -109,6 +109,7 @@ const saveGenresBtn = document.getElementById('save-genres');
 let scPlayerIframe = null;
 let scWidget = null;
 let widgetReady = false;
+let isLoadingNewSong = false; // Flag para ignorar eventos espurios durante carga
 
 const playPauseBtn = document.getElementById('play-pause-btn');
 const progressBar = document.getElementById('progress-bar');
@@ -1390,6 +1391,7 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
+            isLoadingNewSong = false; // La nueva canción empezó a reproducirse, limpiar flag
             isPlaying = true;
             userWantsToPlay = true;
             playPauseBtn.textContent = '⏸';
@@ -1401,6 +1403,7 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.PAUSE, () => {
+            if (isLoadingNewSong) return; // Ignorar PAUSE espurio durante carga
             isPlaying = false;
             playPauseBtn.textContent = '▶';
             if ('mediaSession' in navigator) {
@@ -1411,6 +1414,7 @@ function setupEventListeners() {
         });
 
         scWidget.bind(SC.Widget.Events.FINISH, () => {
+            if (isLoadingNewSong) return; // Ignorar FINISH espurio durante carga
             nextSong();
         });
 
@@ -1448,6 +1452,9 @@ async function playSong(index, resumeAtSeconds = 0) {
 
     setStatus(`LOADING SC_WIDGET: ${song.title}`);
 
+    // Activar flag para ignorar eventos PAUSE/FINISH del widget mientras carga
+    isLoadingNewSong = true;
+
     // Load the permalink URL directly into the official widget
     scWidget.load(song.url, {
         auto_play: true,
@@ -1457,6 +1464,9 @@ async function playSong(index, resumeAtSeconds = 0) {
         show_reposts: false,
         visual: false
     });
+
+    // Safety timeout: si en 10s no llega el PLAY, desactivar el flag
+    setTimeout(() => { isLoadingNewSong = false; }, 10000);
 
     // Warm up MediaSession with REAL metadata immediately
     updateMediaSession(song);
