@@ -1,6 +1,6 @@
 ﻿// SoundCloud Official Direct API
 const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
-const SC_API_BASE = 'https://api.soundcloud.com';
+const SC_API_BASE = 'https://api-v2.soundcloud.com';
 const DEFAULT_SONGS = [
     {
         id: 1,
@@ -672,8 +672,7 @@ function mapSCTrackToPurelyd(track) {
 async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
-        const apiPath = `${SC_API_BASE}/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
-        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+        const targetUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
         const response = await fetch(targetUrl);
 
         if (response.ok) {
@@ -707,9 +706,8 @@ function setupEventListeners() {
             if (mainHeading) mainHeading.innerHTML = `Buscando: <span style="font-weight:400; opacity:0.8;">${searchTerm}</span>...`;
 
             try {
-                // We use corsproxy.io as a compromise: it's a public proxy that fixes the 403 Forbidden error
-                // without requiring the user to deploy their own Cloudflare Worker.
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(`${SC_API_BASE}/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`)}`;
+                // Using API-v2 direct as it's often more compatible with browser fetches.
+                const targetUrl = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
                 const response = await fetch(targetUrl);
 
                 if (response.ok) {
@@ -725,7 +723,7 @@ function setupEventListeners() {
                 }
                 throw new Error(`SoundCloud API HTTP Error: ${response.status}`);
             } catch (err) {
-                console.error("Search error via Worker:", err);
+                console.error("Search error:", err);
                 if (mainHeading) mainHeading.textContent = "Error en la búsqueda";
             }
         }
@@ -867,9 +865,9 @@ function setupEventListeners() {
 
             try {
                 // Determine user's top genre if possible, or fallback to pop/hiphop
+                const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
                 const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
-                const apiPath = `${SC_API_BASE}/tracks?tags=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+                const targetUrl = `${SC_API_BASE}/search/tracks?q=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const data = await response.json();
@@ -1026,8 +1024,7 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 const data = await response.json();
 
@@ -1052,8 +1049,7 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const trackData = await response.json();
@@ -1101,8 +1097,7 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
-                const targetUrl = `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+                const targetUrl = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
                 const response = await fetch(targetUrl);
                 if (response.ok) {
                     const trackData = await response.json();
