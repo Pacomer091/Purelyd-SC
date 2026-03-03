@@ -513,33 +513,31 @@ function renderSongs() {
         return;
     }
 
-}
+    // TRENDING VIEW
+    if (currentPlaylistId === 'trending') {
+        // We render a special grid for Trending
+        const mainHeading = document.querySelector('.content-area h1');
+        if (mainHeading) mainHeading.innerHTML = `🔥 Tendencias Top 40`;
 
-// TRENDING VIEW
-if (currentPlaylistId === 'trending') {
-    // We render a special grid for Trending
-    const mainHeading = document.querySelector('.content-area h1');
-    if (mainHeading) mainHeading.innerHTML = `🔥 Tendencias Top 40`;
-
-    if (!songs || songs.length === 0) {
-        songGrid.innerHTML = `
+        if (!songs || songs.length === 0) {
+            songGrid.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 50px; text-align: center; color: #888;">
                     <div style="font-size: 2rem; margin-bottom: 10px;" class="spinner">⏳</div>
                     <style>@keyframes spin { 100% { transform: rotate(360deg); } } .spinner { display: inline-block; animation: spin 1s linear infinite; }</style>
                     Cargando éxitos en vivo...
                 </div>
             `;
-        return;
-    }
+            return;
+        }
 
-    const favIds = currentUser ? (currentUser.favorites || []) : [];
-    songGrid.innerHTML = songs.map((song, index) => {
-        const isFav = favIds.includes(song.id);
-        // Rank counter
-        const rank = index + 1;
-        const rankColor = rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : 'var(--text-secondary)';
+        const favIds = currentUser ? (currentUser.favorites || []) : [];
+        songGrid.innerHTML = songs.map((song, index) => {
+            const isFav = favIds.includes(song.id);
+            // Rank counter
+            const rank = index + 1;
+            const rankColor = rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : 'var(--text-secondary)';
 
-        return `
+            return `
             <div class="song-card" data-index="${index}">
                 <div style="position: absolute; top: -10px; left: -10px; width: 30px; height: 30px; background: #222; color: ${rankColor}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9rem; z-index: 2; border: 2px solid #111; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
                     ${rank}
@@ -558,43 +556,43 @@ if (currentPlaylistId === 'trending') {
             </div>
         `}).join('');
 
-    // Attach clicks
-    document.querySelectorAll('.song-card').forEach(card => {
-        card.onclick = (e) => {
-            if (e.target.closest('.options-btn')) return;
-            const index = parseInt(card.dataset.index);
-            playSong(index);
-        };
+        // Attach clicks
+        document.querySelectorAll('.song-card').forEach(card => {
+            card.onclick = (e) => {
+                if (e.target.closest('.options-btn')) return;
+                const index = parseInt(card.dataset.index);
+                playSong(index);
+            };
+        });
+
+        document.querySelectorAll('.options-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showMenu(e, parseInt(btn.dataset.index));
+            };
+        });
+
+        toggleSelectBtn.style.display = 'none';
+        if (isSelectMode) exitSelectMode();
+        return;
+    }
+
+    // SEARCH / PLAYLIST VIEW: Show songs
+    const favIds = currentUser ? (currentUser.favorites || []) : [];
+
+    const filteredSongs = songs.filter(song => {
+        const query = searchTerm.toLowerCase();
+        return song.title.toLowerCase().includes(query) ||
+            song.artist.toLowerCase().includes(query);
     });
 
-    document.querySelectorAll('.options-btn').forEach(btn => {
-        btn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showMenu(e, parseInt(btn.dataset.index));
-        };
-    });
-
-    toggleSelectBtn.style.display = 'none';
-    if (isSelectMode) exitSelectMode();
-    return;
-}
-
-// SEARCH / PLAYLIST VIEW: Show songs
-const favIds = currentUser ? (currentUser.favorites || []) : [];
-
-const filteredSongs = songs.filter(song => {
-    const query = searchTerm.toLowerCase();
-    return song.title.toLowerCase().includes(query) ||
-        song.artist.toLowerCase().includes(query);
-});
-
-songGrid.innerHTML = filteredSongs.map((song, index) => {
-    const isFav = favIds.includes(song.id);
-    const isSelected = selectedSongIds.includes(song.id);
-    // We need to find the REAL index in the 'songs' array for playSong(index)
-    const realIndex = songs.findIndex(s => s.id === song.id);
-    return `
+    songGrid.innerHTML = filteredSongs.map((song, index) => {
+        const isFav = favIds.includes(song.id);
+        const isSelected = selectedSongIds.includes(song.id);
+        // We need to find the REAL index in the 'songs' array for playSong(index)
+        const realIndex = songs.findIndex(s => s.id === song.id);
+        return `
         <div class="song-card ${isSelected ? 'selected' : ''}" data-index="${realIndex}">
             ${!isSelectMode ? `<button class="options-btn" data-index="${realIndex}">⋮</button>` : ''}
             ${isFav ? `
@@ -610,37 +608,39 @@ songGrid.innerHTML = filteredSongs.map((song, index) => {
         </div>
     `}).join('');
 
-// Update Select Button visibility
-if (currentPlaylistId === 'uploads' && currentUser) {
-    toggleSelectBtn.style.display = 'block';
-} else {
-    toggleSelectBtn.style.display = 'none';
-    if (isSelectMode) exitSelectMode();
+    // Update Select Button visibility
+    if (currentPlaylistId === 'uploads' && currentUser) {
+        toggleSelectBtn.style.display = 'block';
+    } else {
+        toggleSelectBtn.style.display = 'none';
+        if (isSelectMode) exitSelectMode();
+    }
+
+    // Re-attach card clicks
+    document.querySelectorAll('.song-card').forEach(card => {
+        card.onclick = (e) => {
+            if (e.target.closest('.options-btn')) return;
+            const index = parseInt(card.dataset.index);
+            const song = songs[index];
+
+            if (isSelectMode) {
+                toggleSongSelection(song.id);
+            } else {
+                playSong(index);
+            }
+        };
+    });
+
+    // Re-attach menu clicks
+    document.querySelectorAll('.options-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showMenu(e, parseInt(btn.dataset.index));
+        };
+    });
 }
 
-// Re-attach card clicks
-document.querySelectorAll('.song-card').forEach(card => {
-    card.onclick = (e) => {
-        if (e.target.closest('.options-btn')) return;
-        const index = parseInt(card.dataset.index);
-        const song = songs[index];
-
-        if (isSelectMode) {
-            toggleSongSelection(song.id);
-        } else {
-            playSong(index);
-        }
-    };
-});
-
-// Re-attach menu clicks
-document.querySelectorAll('.options-btn').forEach(btn => {
-    btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showMenu(e, parseInt(btn.dataset.index));
-    };
-});
 function getThumbnail(song) {
     if (song.cover) return song.cover;
     return 'https://via.placeholder.com/300';
