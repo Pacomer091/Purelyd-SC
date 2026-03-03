@@ -70,16 +70,22 @@ const UserDB = {
 // Song Operations
 const SongDB = {
     async addSong(song, username) {
-        // Aseguramos que siempre hay un id antes del upsert
+        // Solo incluimos las columnas que existen en sc_songs
+        // (durationMs y streamable NO existen en la tabla)
         const songWithUser = {
             id: song.id ?? crypto.randomUUID(),
-            ...song,
-            username
+            title: song.title || 'Unknown',
+            artist: song.artist || 'Unknown',
+            url: song.url || '',
+            cover: song.cover || '',
+            type: song.type || 'soundcloud',
+            username: username || song.username
         };
         const { error } = await getSupabase().from('sc_songs').upsert([songWithUser]);
         if (error) throw error;
         return true;
     },
+
 
     async getSongsByUser(username) {
         const { data, error } = await getSupabase().from('sc_songs').select('*').eq('username', username);
