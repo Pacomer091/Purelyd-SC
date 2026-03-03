@@ -972,12 +972,25 @@ function setupEventListeners() {
     menuFavorite.onclick = async () => {
         if (menuTargetIndex === null || !currentUser) return;
         const song = songs[menuTargetIndex];
+
+        const isCurrentlyFav = (currentUser.favorites || []).map(id => id.toString()).includes(song.id.toString());
+
+        // Si se va a AÑADIR como favorito, guardar primero la canción en la BD
+        if (!isCurrentlyFav) {
+            try {
+                await SongDB.addSong({ ...song, username: currentUser.username }, currentUser.username);
+            } catch (e) {
+                console.warn('[Favorites] No se pudo guardar la canción en sc_songs:', e);
+            }
+        }
+
         const newFavs = await UserDB.toggleFavorite(currentUser.username, song.id);
         currentUser.favorites = newFavs;
         localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
 
         hideMenu();
         renderSongs(); // Always re-render to show/hide heart icon immediately
+
     };
 
     // Multi-select handlers
