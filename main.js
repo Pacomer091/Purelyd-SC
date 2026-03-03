@@ -1392,8 +1392,9 @@ function setupEventListeners() {
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
             isLoadingNewSong = false;
-            // Cancelar el timeout de play() manual — la canción ya arrancó sola
-            clearTimeout(window._loadSongTimeout);
+            // Cancelar ambos timeouts — la canción arrancó sola, no necesitamos nada más
+            clearTimeout(window._loadSongPlayTimeout);
+            clearTimeout(window._loadSongResetTimeout);
             isPlaying = true;
             userWantsToPlay = true;
             playPauseBtn.textContent = '⏸';
@@ -1487,15 +1488,25 @@ async function playSong(index) {
         visual: false
     });
 
-    // En móvil Chrome, la activación de usuario del tap persiste ~5s.
-    // Llamar play() con este delay permite que el widget cargue el audio
-    // y luego reproducir dentro de la ventana, desbloqueando el autoplay.
-    clearTimeout(window._loadSongTimeout);
-    window._loadSongTimeout = setTimeout(() => {
+    // Intentar play() en 800ms (dentro de la ventana de activación de usuario en Chrome móvil)
+    clearTimeout(window._loadSongPlayTimeout);
+    clearTimeout(window._loadSongResetTimeout);
+
+    window._loadSongPlayTimeout = setTimeout(() => {
         if (userWantsToPlay && isLoadingNewSong) {
             scWidget.play();
         }
     }, 800);
+
+    // SEGURIDAD: si PLAY nunca llega (ej. móvil sin gesto de usuario),
+    // resetear el flag para que la app no quede congelada.
+    // El usuario puede pulsar ▶ manualmente después.
+    window._loadSongResetTimeout = setTimeout(() => {
+        if (isLoadingNewSong) {
+            console.warn('[SC] PLAY no llegó en 5s — reseteando flag para desbloquear app');
+            isLoadingNewSong = false;
+        }
+    }, 5000);
 
     updateMediaSession(song);
 }
