@@ -1388,11 +1388,6 @@ function setupEventListeners() {
             console.log('[SC] Widget Ready');
             widgetReady = true;
             scWidget.setVolume(volumeSlider.value);
-            // Arrancar la canción cuando el widget esté listo
-            // En móvil Chrome, play() desde READY hereda la activación del tap del usuario
-            if (userWantsToPlay && isLoadingNewSong) {
-                scWidget.play();
-            }
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
@@ -1471,7 +1466,7 @@ async function playSong(index) {
     userWantsToPlay = true;
 
     scWidget.load(song.url, {
-        auto_play: false,   // Lo manejamos manualmente en READY para mejor compatibilidad móvil
+        auto_play: true,
         hide_related: true,
         show_comments: false,
         show_user: true,
