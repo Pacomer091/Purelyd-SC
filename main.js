@@ -1518,7 +1518,7 @@ async function playSong(index) {
         visual: false
     });
 
-    // Intentar play() en 800ms (dentro de la ventana de activación de usuario en Chrome móvil)
+    // Intentar play() casi inmediato (ventana de activación de usuario móvil)
     clearTimeout(window._loadSongPlayTimeout);
     clearTimeout(window._loadSongResetTimeout);
 
@@ -1526,22 +1526,18 @@ async function playSong(index) {
         if (userWantsToPlay && isLoadingNewSong) {
             scWidget.play();
         }
-    }, 800);
+    }, 10);
 
-    // SEGURIDAD: si PLAY nunca llega (ej. móvil sin gesto de usuario),
-    // resetear el flag para que la app no quede congelada.
+    // SEGURIDAD: resetear flag en 5s
     window._loadSongResetTimeout = setTimeout(() => {
         if (isLoadingNewSong) {
-            console.warn('[SC] PLAY no llegó en 3s — reseteando flag para desbloquear app');
             isLoadingNewSong = false;
-            // Forzar actualización de UI si el autoplay falló
             playPauseBtn.textContent = '▶';
         }
-    }, 3000);
+    }, 5000);
 
     updateMediaSession(song);
 }
-
 
 function updateMediaSession(song) {
     if (!('mediaSession' in navigator)) return;
@@ -1557,7 +1553,6 @@ function updateMediaSession(song) {
 
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 
-    // Si tenemos la duración de la BD, inicializar el estado de posición ya mismo
     if ('setPositionState' in navigator.mediaSession && song.durationMs) {
         navigator.mediaSession.setPositionState({
             duration: song.durationMs / 1000,
@@ -1630,6 +1625,7 @@ function seekToTime(timeSec) {
     scWidget.seekTo(timeSec * 1000);
 }
 
+
 // Background Keep-Alive Logic
 const silentAudio = document.getElementById('silent-audio');
 const SILENT_TRACK = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
@@ -1645,233 +1641,27 @@ function startKeepAlive() {
     }
 }
 
-document.addEventListener('click', () => {
-    startKeepAlive();
-    initMediaSessionHandlers();
-}, { once: true });
-
-document.addEventListener('touchstart', () => {
-    startKeepAlive();
-    initMediaSessionHandlers();
-}, { once: true });
-
 function stopKeepAlive() {
     if (silentAudio) {
         silentAudio.pause();
     }
 }
 
-document.addEventListener('visibilitychange', () => {
-    if (userWantsToPlay && !document.hidden && !isPlaying && scWidget) {
-        scWidget.play();
-    }
-    if (userWantsToPlay) startKeepAlive();
-});
-
 function togglePlay() {
     if (!scWidget || !widgetReady) return;
     scWidget.toggle();
 }
 
-function updateProgress(progressData) {
-    if (!progressData) return;
-
-    // progressData contains currentPosition and relativePosition
-    const currentMs = progressData.currentPosition;
-
-    scWidget.getDuration((durationMs) => {
-        if (durationMs > 0) {
-            const currentSec = currentMs / 1000;
-            const durationSec = durationMs / 1000;
-            const progress = (currentMs / durationMs) * 100;
-
-            progressBar.value = progress;
-            currentTimeEl.textContent = formatTime(currentSec);
-            totalTimeEl.textContent = formatTime(durationSec);
-
-            // Jitter Guard: Sync with OS MediaSession
-            const currentFloor = Math.floor(currentSec);
-            if (isPlaying && currentFloor % 5 === 0) {
-                updateMediaSessionPositionState(currentSec, durationSec);
-            }
-        }
-    });
-}
-
-function formatTime(seconds) {
-    if (isNaN(seconds)) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-let menuTargetIndex = null;
-
-function showMenu(event, index) {
-    if (!event) return;
-
-    console.log("showMenu for index:", index);
-    menuTargetIndex = index;
-    const menu = document.getElementById('context-menu');
-
-    if (!menu) {
-        console.error("Menu container not found!");
-        return;
-    }
-
-    menu.style.display = 'block';
-
-    // Update Favorite text dynamically
-    if (currentUser && songs[index]) {
-        const isFav = (currentUser.favorites || []).includes(songs[index].id);
-        menuFavorite.textContent = isFav ? "Quitar de Favoritos" : "Añadir a Favoritos";
-    }
-
-    // Calculate position
-    const menuWidth = 160;
-    let x = event.clientX;
-    let y = event.clientY;
-
-    // Keep menu inside window
-    if (x + menuWidth > window.innerWidth) x -= menuWidth;
-
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-
-    console.log(`Menu active at ${x}, ${y}`);
-}
-
-function hideMenu() {
-    document.getElementById('context-menu').style.display = 'none';
-}
-
-async function deleteSongById(id) {
-    if (confirm(`¿Seguro que quieres eliminar esta canción?`)) {
-        await SongDB.deleteSong(id);
-        await loadUserSongs();
-        renderSongs();
-    }
-}
-
-function openEditModal(index) {
-    const song = songs[index];
-    editingSongId = song.id;
-
-    document.getElementById('song-title').value = song.title;
-    document.getElementById('song-artist').value = song.artist;
-    document.getElementById('song-url').value = song.url;
-    document.getElementById('song-cover').value = song.cover || '';
-
-    document.querySelector('#add-song-modal h2').textContent = 'Editar Canciï¿½n';
-    addSongModal.style.display = 'flex';
-}
-
-async function saveSongs() {
-    if (!currentUser) return;
-    console.log(`Saving ${songs.length} songs for ${currentUser.username} to DB`);
-    for (const song of songs) {
-        if (!song.id) song.id = Date.now() + Math.random();
-        await SongDB.addSong(song, currentUser.username);
-    }
-}
-
-// Optional: Add a function to clear the library if user wants to reset
+// Limpiar la biblioteca
 function clearLibrary() {
     if (confirm("¿Seguro que quieres borrar toda tu biblioteca?")) {
-        songs = [];
-        saveSongs();
-        renderSongs();
+        SongDB.clearAllSongs().then(() => {
+            songs = [];
+            renderSongs();
+        });
     }
 }
 
+// Iniciar app
 init();
-
-// Selection Mode Helpers
-function toggleSelectMode() {
-    isSelectMode = !isSelectMode;
-    selectedSongIds = [];
-    if (!isSelectMode) {
-        multiActionBar.style.display = 'none';
-        toggleSelectBtn.textContent = 'Seleccionar';
-    } else {
-        multiActionBar.style.display = 'flex';
-        toggleSelectBtn.textContent = 'Salir Selección';
-        updateMultiBar();
-    }
-    renderSongs();
-}
-
-function exitSelectMode() {
-    isSelectMode = false;
-    selectedSongIds = [];
-    multiActionBar.style.display = 'none';
-    toggleSelectBtn.textContent = 'Seleccionar';
-    renderSongs();
-}
-
-function toggleSongSelection(songId) {
-    const index = selectedSongIds.indexOf(songId);
-    if (index === -1) {
-        selectedSongIds.push(songId);
-    } else {
-        selectedSongIds.splice(index, 1);
-    }
-    updateMultiBar();
-    renderSongs();
-}
-
-function updateMultiBar() {
-    selectedCountEl.textContent = `${selectedSongIds.length} seleccionados`;
-}
-
-async function bulkDelete() {
-    if (selectedSongIds.length === 0) return;
-    if (!confirm(`¿Estás seguro de que quieres eliminar ${selectedSongIds.length} canciones?`)) return;
-
-    for (const id of selectedSongIds) {
-        await SongDB.deleteSong(id);
-    }
-    alert(`${selectedSongIds.length} canciones eliminadas.`);
-    exitSelectMode();
-    await loadUserSongs();
-    renderSongs();
-}
-
-async function bulkFavorite() {
-    if (selectedSongIds.length === 0 || !currentUser) return;
-
-    for (const id of selectedSongIds) {
-        const newFavs = await UserDB.toggleFavorite(currentUser.username, id);
-        currentUser.favorites = newFavs;
-    }
-    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
-    alert('Favoritos actualizados.');
-    exitSelectMode();
-    renderSongs();
-}
-
-async function bulkAddToPlaylist() {
-    if (selectedSongIds.length === 0 || !currentUser) return;
-
-    const userPlaylists = await PlaylistDB.getPlaylistsByUser(currentUser.username);
-    if (userPlaylists.length === 0) return alert('No tienes playlists. Crea una primero.');
-
-    playlistSelectorList.innerHTML = userPlaylists.map(p => `
-        <div class="selector-item" data-id="${p.id}">${p.name}</div>
-    `).join('');
-
-    addToPlaylistModal.style.display = 'flex';
-
-    document.querySelectorAll('.selector-item').forEach(item => {
-        item.onclick = async () => {
-            const pid = parseInt(item.dataset.id);
-            for (const sid of selectedSongIds) {
-                await PlaylistDB.addSongToPlaylist(pid, sid);
-            }
-            alert('Canciones añadidas a la playlist!');
-            addToPlaylistModal.style.display = 'none';
-            exitSelectMode();
-        };
-    });
-}
 
