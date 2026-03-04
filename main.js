@@ -1404,9 +1404,11 @@ function setupEventListeners() {
     // Initialize SoundCloud Widget
     bindWidgetEvents();
 
-    // Setup Local Audio Element
+    // Setup Local Audio Element as PRIMARY ENGINE
     const audioElement = document.getElementById('audio-element');
+    // Para móvil, asegurarnos de que el audio puede reproducirse cross-origin
     if (audioElement) {
+        audioElement.crossOrigin = "anonymous";
         audioElement.onplay = () => {
             isPlaying = true;
             userWantsToPlay = true;
@@ -1691,56 +1693,64 @@ async function playSong(index) {
 
     const isDirectAudio = song.type === 'audio' || song.url.includes('.mp3') || song.url.includes('.wav') || song.url.includes('googleusercontent');
 
+    if (!localAudio) return;
+
     if (isDirectAudio) {
-        if (localAudio) {
-            localAudio.src = song.url;
-            localAudio.play().catch(e => {
-                console.error("Audio playback failed:", e);
-                setStatus("Error playing audio file");
-            });
-            updateMediaSession(song);
-        }
-    } else {
-        // SoundCloud Path
-        if (!scWidget || !widgetReady) {
-            setStatus('Esperando SoundCloud...');
-            setTimeout(() => playSong(index), 500);
-            return;
-        }
-
-        isLoadingNewSong = true;
-        isPlaying = false;
-        userWantsToPlay = true;
-
-        // ESTRATEGIA MÓVIL DEFINITIVA: "The AudioContext Hack"
-        // 1. Iniciar un audio HTML5 silencioso SÍNCRONAMENTE en el mismo frame del click
-        // 2. Hacer el scWidget.load() asíncrono
-        // Dado que el canal de media ya se ha activado en el paso 1, el navegador móvil
-        // (Chrome/Safari) dejará pasar el auto_play del iframe cross-domain.
-        const silentAudio = document.getElementById('silent-audio');
-        if (silentAudio) {
-            silentAudio.play().catch(e => console.log("Silent audio blocked", e));
-        }
-
-        scWidget.load(song.url, {
-            auto_play: true,
-            hide_related: true,
-            show_comments: false,
-            show_user: true,
-            show_reposts: false,
-            visual: false
+        localAudio.src = song.url;
+        localAudio.play().catch(e => {
+            console.error("Audio playback failed:", e);
+            setStatus("Error playing audio file");
         });
-
-        clearTimeout(window._loadSongResetTimeout);
-
-        window._loadSongResetTimeout = setTimeout(() => {
-            if (isLoadingNewSong) {
-                isLoadingNewSong = false;
-                playPauseBtn.textContent = '▶';
-            }
-        }, 5000);
-
         updateMediaSession(song);
+    } else {
+        // ESTRATEGIA DEFINITIVA MÓVIL: No usar el iframe de SoundCloud para reproducir.
+        // SoundCloud bloquea activamente el autoplay en iframes móviles desde 2018.
+        // Solución: Extraer el stream progresivo de SC y ponerlo en nuestro <audio> nativo.
+
+        setStatus('Resolviendo stream de SoundCloud...');
+        isLoadingNewSong = true;
+
+        try {
+            // Resolver SC track id desde la URL completa
+            let trackId = song.id;
+            if (typeof trackId === 'string' && trackId.startsWith('sc-')) {
+                trackId = trackId.substring(3); // Quitar prefijo sc-
+            }
+
+            // Llamar a nuestra API CORS wrapper para obtener los streams
+            const data = await fetchSCApi(`/tracks/${trackId}`);
+            if (!data || !data.media || !data.media.transcodings) {
+                throw new Error("No media transcodings found");
+            }
+
+            // Buscar el stream progresivo mp3 (el formato más compatible con móvil/web)
+            const progressiveTranscoding = data.media.transcodings.find(t => t.format.protocol === 'progressive');
+
+            if (!progressiveTranscoding) {
+                throw new Error("Progressive stream not found for this track");
+            }
+
+            // Obtener la URL real del stream (requiere client_id otra vez)
+            const streamData = await fetchSCApi(progressiveTranscoding.url, true); // true = raw absolute url
+            if (!streamData || !streamData.url) {
+                throw new Error("Failed to resolve final stream URL");
+            }
+
+            // Poner el stream MP3 directo en el HTML5 Audio de Purelyd
+            localAudio.src = streamData.url;
+            localAudio.play().catch(err => {
+                console.error("[SC] Error reproduciendo el stream directo:", err);
+                setStatus("El navegador bloqueó el autoplay. Pulsa Play.");
+            });
+
+            isLoadingNewSong = false;
+            updateMediaSession(song);
+
+        } catch (error) {
+            console.error("[SC Stream Resolution Error]:", error);
+            setStatus("Error al cargar la canción desde SC.");
+            isLoadingNewSong = false;
+        }
     }
 }
 
