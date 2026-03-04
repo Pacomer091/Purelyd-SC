@@ -1381,98 +1381,103 @@ function setupEventListeners() {
     document.getElementById('prev-btn').onclick = prevSong;
 
     // Initialize SoundCloud Widget - eventos se bindan UNA SOLA VEZ
-    scPlayerIframe = document.getElementById('sc-player');
-    if (scPlayerIframe && window.SC) {
-        scWidget = SC.Widget(scPlayerIframe);
+    function initSCWidget() {
+        scPlayerIframe = document.getElementById('sc-player');
+        if (!scPlayerIframe) return;
 
-        scWidget.bind(SC.Widget.Events.READY, () => {
-            console.log('[SC] Widget Ready');
-            widgetReady = true;
-            scWidget.setVolume(volumeSlider.value);
-            initMediaSessionHandlers();
-        });
+        if (window.SC && SC.Widget) {
+            scWidget = SC.Widget(scPlayerIframe);
+            scWidget.bind(SC.Widget.Events.READY, () => {
+                console.log('[SC] Widget Ready');
+                widgetReady = true;
+                scWidget.setVolume(volumeSlider.value);
+                initMediaSessionHandlers();
+            });
 
-        scWidget.bind(SC.Widget.Events.PLAY, () => {
-            isLoadingNewSong = false;
-            clearTimeout(window._loadSongPlayTimeout);
-            clearTimeout(window._loadSongResetTimeout);
-            isPlaying = true;
-            userWantsToPlay = true;
-            playPauseBtn.textContent = '⏸';
+            scWidget.bind(SC.Widget.Events.PLAY, () => {
+                isLoadingNewSong = false;
+                clearTimeout(window._loadSongPlayTimeout);
+                clearTimeout(window._loadSongResetTimeout);
+                isPlaying = true;
+                userWantsToPlay = true;
+                playPauseBtn.textContent = '⏸';
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                startKeepAlive();
+            });
 
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'playing';
-                // Sincronizar inmediatamente para dar punto de base al OS
-                scWidget.getPosition((pos) => {
-                    scWidget.getDuration((dur) => {
-                        if (dur > 0) {
-                            navigator.mediaSession.setPositionState({
-                                duration: dur / 1000,
-                                playbackRate: 1,
-                                position: pos / 1000
-                            });
-                        }
-                    });
-                });
-            }
-            startKeepAlive();
-        });
+            scWidget.bind(SC.Widget.Events.PAUSE, () => {
+                if (isLoadingNewSong) return;
+                isPlaying = false;
+                playPauseBtn.textContent = '▶';
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                stopKeepAlive();
+            });
 
-        scWidget.bind(SC.Widget.Events.PAUSE, () => {
-            if (isLoadingNewSong) return;
-            isPlaying = false;
-            playPauseBtn.textContent = '▶';
+            scWidget.bind(SC.Widget.Events.FINISH, () => {
+                if (isLoadingNewSong) return;
+                startKeepAlive();
+                nextSong();
+            });
 
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'paused';
-                // Al pausar, poner playbackRate: 0 para que el contador nativo se detenga
-                scWidget.getPosition((pos) => {
-                    scWidget.getDuration((dur) => {
-                        if (dur > 0) {
-                            navigator.mediaSession.setPositionState({
-                                duration: dur / 1000,
-                                playbackRate: 0,
-                                position: pos / 1000
-                            });
-                        }
-                    });
-                });
-            }
-            stopKeepAlive();
-        });
+            scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
+                if (!progressBar) return;
+                const now = Date.now();
+                if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
+                    progressBar.value = (data.relativePosition || 0) * 100;
+                    if (currentTimeEl && data.currentPosition != null)
+                        currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
+                    if (totalTimeEl && data.duration > 0)
+                        totalTimeEl.textContent = formatTime(data.duration / 1000);
 
-        scWidget.bind(SC.Widget.Events.FINISH, () => {
-            if (isLoadingNewSong) return;
-            // IMPORTANTE PARA MÓVIL: activar el audio silencioso ANTES de cambiar
-            // para que el navegador no pause la ejecución de la app al detectar silencio.
-            startKeepAlive();
-            nextSong();
-        });
-
-        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
-            if (!progressBar) return;
-            progressBar.value = (data.relativePosition || 0) * 100;
-            if (currentTimeEl && data.currentPosition != null)
-                currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
-            if (totalTimeEl && data.duration > 0)
-                totalTimeEl.textContent = formatTime(data.duration / 1000);
-
-            // Sincronización throttled con el OS (cada 2 segundos) para evitar lag
-            const now = Date.now();
-            if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
-                if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
                     try {
-                        navigator.mediaSession.setPositionState({
-                            duration: data.duration / 1000,
-                            playbackRate: 1,
-                            position: Math.min(data.currentPosition / 1000, data.duration / 1000)
-                        });
+                        if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                            navigator.mediaSession.setPositionState({
+                                duration: data.duration / 1000,
+                                playbackRate: 1,
+                                position: Math.min(data.currentPosition / 1000, data.duration / 1000)
+                            });
+                        }
                         window._lastMSUpdate = now;
                     } catch (e) { /* ignore */ }
                 }
-            }
-        });
+            });
 
+            scWidget.bind(SC.Widget.Events.ERROR, () => {
+                console.error('[SC] Widget Error Event');
+                setStatus('Error en SoundCloud Widget');
+            });
+        } else {
+            console.warn('[SC] API not loaded yet, retrying in 1s...');
+            setTimeout(initSCWidget, 1000);
+        }
+    }
+
+    initSCWidget();
+
+    // Setup Local Audio Element
+    const audioElement = document.getElementById('audio-element');
+    if (audioElement) {
+        audioElement.onplay = () => {
+            isPlaying = true;
+            userWantsToPlay = true;
+            playPauseBtn.textContent = '⏸';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            startKeepAlive();
+        };
+        audioElement.onpause = () => {
+            isPlaying = false;
+            playPauseBtn.textContent = '▶';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            stopKeepAlive();
+        };
+        audioElement.onended = () => nextSong();
+        audioElement.ontimeupdate = () => {
+            if (audioElement.duration > 0) {
+                progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
+                currentTimeEl.textContent = formatTime(audioElement.currentTime);
+                totalTimeEl.textContent = formatTime(audioElement.duration);
+            }
+        };
     }
 }
 
@@ -1644,45 +1649,63 @@ async function playSong(index) {
 
     setStatus(`▶ ${song.title}`);
 
-    if (!scWidget || !widgetReady) {
-        setStatus('Esperando widget...');
-        setTimeout(() => playSong(index), 500);
-        return;
+    // Stop whichever engine might be running
+    const localAudio = document.getElementById('audio-element');
+    if (localAudio) localAudio.pause();
+    if (scWidget && widgetReady) {
+        try { scWidget.pause(); } catch (e) { }
     }
 
-    // Bloquear eventos espurios del widget durante el cambio de canción
-    isLoadingNewSong = true;
-    isPlaying = false; // Resetear estado de reproducción hasta que llegue el evento PLAY
-    userWantsToPlay = true;
+    const isDirectAudio = song.type === 'audio' || song.url.includes('.mp3') || song.url.includes('.wav') || song.url.includes('googleusercontent');
 
-    scWidget.load(song.url, {
-        auto_play: true,
-        hide_related: true,
-        show_comments: false,
-        show_user: true,
-        show_reposts: false,
-        visual: false
-    });
-
-    // Intentar play() casi inmediato (ventana de activación de usuario móvil)
-    clearTimeout(window._loadSongPlayTimeout);
-    clearTimeout(window._loadSongResetTimeout);
-
-    window._loadSongPlayTimeout = setTimeout(() => {
-        if (userWantsToPlay && isLoadingNewSong) {
-            scWidget.play();
+    if (isDirectAudio) {
+        if (localAudio) {
+            localAudio.src = song.url;
+            localAudio.play().catch(e => {
+                console.error("Audio playback failed:", e);
+                setStatus("Error playing audio file");
+            });
+            updateMediaSession(song);
         }
-    }, 10);
-
-    // SEGURIDAD: resetear flag en 5s
-    window._loadSongResetTimeout = setTimeout(() => {
-        if (isLoadingNewSong) {
-            isLoadingNewSong = false;
-            playPauseBtn.textContent = '▶';
+    } else {
+        // SoundCloud Path
+        if (!scWidget || !widgetReady) {
+            setStatus('Esperando SoundCloud...');
+            setTimeout(() => playSong(index), 500);
+            return;
         }
-    }, 5000);
 
-    updateMediaSession(song);
+        isLoadingNewSong = true;
+        isPlaying = false;
+        userWantsToPlay = true;
+
+        scWidget.load(song.url, {
+            auto_play: true,
+            hide_related: true,
+            show_comments: false,
+            show_user: true,
+            show_reposts: false,
+            visual: false
+        });
+
+        clearTimeout(window._loadSongPlayTimeout);
+        clearTimeout(window._loadSongResetTimeout);
+
+        window._loadSongPlayTimeout = setTimeout(() => {
+            if (userWantsToPlay && isLoadingNewSong) {
+                scWidget.play();
+            }
+        }, 100);
+
+        window._loadSongResetTimeout = setTimeout(() => {
+            if (isLoadingNewSong) {
+                isLoadingNewSong = false;
+                playPauseBtn.textContent = '▶';
+            }
+        }, 5000);
+
+        updateMediaSession(song);
+    }
 }
 
 function updateMediaSession(song) {
@@ -1803,8 +1826,21 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function togglePlay() {
-    if (!scWidget || !widgetReady) return;
-    scWidget.toggle();
+    const song = songs[currentSongIndex];
+    if (!song) return;
+
+    const isDirectAudio = song.type === 'audio' || song.url.includes('.mp3') || song.url.includes('.wav') || song.url.includes('googleusercontent');
+    const localAudio = document.getElementById('audio-element');
+
+    if (isDirectAudio && localAudio) {
+        if (localAudio.paused) {
+            localAudio.play();
+        } else {
+            localAudio.pause();
+        }
+    } else if (scWidget && widgetReady) {
+        scWidget.toggle();
+    }
 }
 
 // Limpiar la biblioteca
