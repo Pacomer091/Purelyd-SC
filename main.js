@@ -52,6 +52,8 @@ let users = [];
 let playlists = [];
 let currentPlaylistId = null; // null means 'Home' or 'Library'
 let searchTerm = '';
+let isDraggingProgress = false; // Prevent jitter when scrubbing
+
 
 // Global error handler for debugging
 window.onerror = function (msg, url, line) {
@@ -1354,19 +1356,29 @@ function setupEventListeners() {
 
     playPauseBtn.onclick = togglePlay;
 
-    progressBar.oninput = () => {
+    progressBar.onmousedown = () => isDraggingProgress = true;
+    progressBar.ontouchstart = () => isDraggingProgress = true;
+
+    progressBar.onchange = () => {
         const audioElement = document.getElementById('audio-element');
         if (audioElement && audioElement.duration > 0) {
             const timeMs = (progressBar.value / 100) * audioElement.duration;
             audioElement.currentTime = timeMs;
         } else if (scWidget && widgetReady) {
-            // Fallback por si volvemos a requerir el widget iframe en PC en el futuro
             scWidget.getDuration((duration) => {
                 const timeMs = (progressBar.value / 100) * duration;
                 scWidget.seekTo(timeMs);
             });
         }
+        isDraggingProgress = false;
     };
+
+    progressBar.onmouseup = () => isDraggingProgress = false;
+    progressBar.ontouchend = () => isDraggingProgress = false;
+
+    // Remove the old oninput logic because it fires continuously while dragging
+    // and fights with ontimeupdate. onchange fires when drag completes.
+
 
     volumeSlider.oninput = () => {
         const vol = volumeSlider.value;
@@ -1444,9 +1456,11 @@ function setupEventListeners() {
         audioElement.onended = () => nextSong();
         audioElement.ontimeupdate = () => {
             if (audioElement.duration > 0) {
-                // UI Updates
-                progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
-                currentTimeEl.textContent = formatTime(audioElement.currentTime);
+                // UI Updates (only if not scrubbing manually)
+                if (!isDraggingProgress) {
+                    progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
+                    currentTimeEl.textContent = formatTime(audioElement.currentTime);
+                }
                 totalTimeEl.textContent = formatTime(audioElement.duration);
 
                 // MediaSession Throttling for native audio
