@@ -1532,28 +1532,17 @@ function bindWidgetEvents() {
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
-            isLoadingNewSong = false;
-            clearTimeout(window._loadSongPlayTimeout);
-            clearTimeout(window._loadSongResetTimeout);
-            isPlaying = true;
-            userWantsToPlay = true;
-            playPauseBtn.textContent = '⏸';
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-            startKeepAlive();
+            // Ignorar eventos del widget para la UI en este modo unificado
+            console.log('[SC] Widget Play Event (Ignored for UI)');
         });
 
         scWidget.bind(SC.Widget.Events.PAUSE, () => {
-            if (isLoadingNewSong) return;
-            isPlaying = false;
-            playPauseBtn.textContent = '▶';
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-            stopKeepAlive();
+            console.log('[SC] Widget Pause Event (Ignored for UI)');
         });
 
         scWidget.bind(SC.Widget.Events.FINISH, () => {
-            if (isLoadingNewSong) return;
-            startKeepAlive();
-            nextSong();
+            console.log('[SC] Widget Finish Event (Ignored for UI)');
+            // No llamar a nextSong() desde aquí; el audioElement se encarga
         });
 
         // Eliminar listeners de UI del Widget porque ahora el audio en móvil
@@ -1837,17 +1826,18 @@ function updateMediaSession(song) {
 }
 
 function initMediaSessionHandlers() {
-    if (!('mediaSession' in navigator) || !scWidget) return;
+    if (!('mediaSession' in navigator)) return;
+    const audioElement = document.getElementById('audio-element');
 
     const handlers = {
         'play': () => {
             userWantsToPlay = true;
             startKeepAlive();
-            scWidget.play();
+            if (audioElement) audioElement.play();
         },
         'pause': () => {
             userWantsToPlay = false;
-            scWidget.pause();
+            if (audioElement) audioElement.pause();
         },
         'previoustrack': () => prevSong(),
         'nexttrack': () => nextSong(),
@@ -1888,15 +1878,15 @@ function updateMediaSessionPositionState(currentSec, durationSec) {
 }
 
 function seekRelative(offsetSec) {
-    if (!scWidget) return;
-    scWidget.getPosition((currentMs) => {
-        scWidget.seekTo(currentMs + (offsetSec * 1000));
-    });
+    const audioElement = document.getElementById('audio-element');
+    if (!audioElement) return;
+    audioElement.currentTime = Math.max(0, Math.min(audioElement.duration, audioElement.currentTime + offsetSec));
 }
 
 function seekToTime(timeSec) {
-    if (!scWidget) return;
-    scWidget.seekTo(timeSec * 1000);
+    const audioElement = document.getElementById('audio-element');
+    if (!audioElement) return;
+    audioElement.currentTime = Math.max(0, Math.min(audioElement.duration, timeSec));
 }
 
 
@@ -1934,17 +1924,13 @@ function togglePlay() {
     const song = songs[currentSongIndex];
     if (!song) return;
 
-    const isDirectAudio = song.type === 'audio' || song.url.includes('.mp3') || song.url.includes('.wav') || song.url.includes('googleusercontent');
     const localAudio = document.getElementById('audio-element');
-
-    if (isDirectAudio && localAudio) {
+    if (localAudio) {
         if (localAudio.paused) {
             localAudio.play();
         } else {
             localAudio.pause();
         }
-    } else if (scWidget && widgetReady) {
-        scWidget.toggle();
     }
 }
 
