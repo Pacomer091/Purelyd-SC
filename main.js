@@ -56,6 +56,27 @@ let audioContext = null;
 let editingSongId = null;
 let isSelectMode = false;
 let selectedSongIds = [];
+
+// === AUDIO CONTEXT UNLOCK FOR MOBILE ===
+// Los navegadores móviles bloquean el autoplay de iframes (como SoundCloud).
+// Reproducir un audio nativo vacío en el primer tap del usuario desbloquea el contexto a nivel global.
+let audioUnlocked = false;
+function unlockAudioContext() {
+    if (audioUnlocked) return;
+    const silent = document.getElementById('silent-audio');
+    if (silent) {
+        silent.play().then(() => {
+            silent.pause();
+            audioUnlocked = true;
+            console.log("[Audio] Global AudioContext unlocked for mobile.");
+            document.removeEventListener('touchstart', unlockAudioContext);
+            document.removeEventListener('click', unlockAudioContext);
+        }).catch(e => console.log("[Audio] Unlock failed or ignored:", e));
+    }
+}
+document.addEventListener('touchstart', unlockAudioContext, { once: true, passive: true });
+document.addEventListener('click', unlockAudioContext, { once: true, passive: true });
+
 let userWantsToPlay = false;
 
 // DOM Elements
@@ -1691,9 +1712,10 @@ async function playSong(index) {
             visual: false
         });
 
-        // Llamar a play() síncronamente para que Android/iOS no bloqueen el auto-play por 
-        // perder el contexto original del click del usuario.
-        scWidget.play();
+        // NOTA: Se ha eliminado scWidget.play() síncrono porque enviaba el comando
+        // antes de que el widget procesara la carga, rompiendo el estado interno.
+        // Con el global unlock de AudioContext añadido arriba, auto_play: true en load() 
+        // debería bastar ahora para Chrome/Safari móvil.
 
         clearTimeout(window._loadSongResetTimeout);
 
