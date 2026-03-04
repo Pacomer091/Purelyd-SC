@@ -170,6 +170,7 @@ async function init() {
     // 2. Mandatory UI Setup
     setupEventListeners();
     updateAuthUI();
+    initMediaSessionHandlers();
 
     try {
         console.log("Connecting to Supabase Cloud...");
@@ -1388,6 +1389,7 @@ function setupEventListeners() {
             console.log('[SC] Widget Ready');
             widgetReady = true;
             scWidget.setVolume(volumeSlider.value);
+            initMediaSessionHandlers();
         });
 
         scWidget.bind(SC.Widget.Events.PLAY, () => {
@@ -1472,6 +1474,142 @@ function setupEventListeners() {
         });
 
     }
+}
+
+let menuTargetIndex = null;
+
+function showMenu(event, index) {
+    if (!event) return;
+    menuTargetIndex = index;
+    const menu = document.getElementById('context-menu');
+    if (!menu) return;
+
+    menu.style.display = 'block';
+    if (currentUser && songs[index]) {
+        const isFav = (currentUser.favorites || []).includes(songs[index].id);
+        const favBtn = document.getElementById('menu-favorite');
+        if (favBtn) favBtn.textContent = isFav ? "Quitar de Favoritos" : "Añadir a Favoritos";
+    }
+
+    const menuWidth = 160;
+    let x = event.clientX;
+    let y = event.clientY;
+    if (x + menuWidth > window.innerWidth) x -= menuWidth;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+}
+
+function hideMenu() {
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.style.display = 'none';
+}
+
+async function deleteSongById(id) {
+    if (confirm(`¿Seguro que quieres eliminar esta canción?`)) {
+        await SongDB.deleteSong(id);
+        await loadUserSongs();
+        renderSongs();
+    }
+}
+
+function openEditModal(index) {
+    const song = songs[index];
+    editingSongId = song.id;
+    document.getElementById('song-title').value = song.title;
+    document.getElementById('song-artist').value = song.artist;
+    document.getElementById('song-url').value = song.url;
+    document.getElementById('song-cover').value = song.cover || '';
+    document.querySelector('#add-song-modal h2').textContent = 'Editar Canción';
+    addSongModal.style.display = 'flex';
+}
+
+// Selection Mode Helpers
+function toggleSelectMode() {
+    isSelectMode = !isSelectMode;
+    selectedSongIds = [];
+    if (!isSelectMode) {
+        multiActionBar.style.display = 'none';
+        toggleSelectBtn.textContent = 'Seleccionar';
+    } else {
+        multiActionBar.style.display = 'flex';
+        toggleSelectBtn.textContent = 'Salir Selección';
+        updateMultiBar();
+    }
+    renderSongs();
+}
+
+function exitSelectMode() {
+    isSelectMode = false;
+    selectedSongIds = [];
+    multiActionBar.style.display = 'none';
+    toggleSelectBtn.textContent = 'Seleccionar';
+    renderSongs();
+}
+
+function toggleSongSelection(songId) {
+    const index = selectedSongIds.indexOf(songId);
+    if (index === -1) {
+        selectedSongIds.push(songId);
+    } else {
+        selectedSongIds.splice(index, 1);
+    }
+    updateMultiBar();
+    renderSongs();
+}
+
+function updateMultiBar() {
+    selectedCountEl.textContent = `${selectedSongIds.length} seleccionados`;
+}
+
+async function bulkDelete() {
+    if (selectedSongIds.length === 0) return;
+    if (!confirm(`¿Estás seguro de que quieres eliminar ${selectedSongIds.length} canciones?`)) return;
+
+    for (const id of selectedSongIds) {
+        await SongDB.deleteSong(id);
+    }
+    alert(`${selectedSongIds.length} canciones eliminadas.`);
+    exitSelectMode();
+    await loadUserSongs();
+    renderSongs();
+}
+
+async function bulkFavorite() {
+    if (selectedSongIds.length === 0 || !currentUser) return;
+
+    for (const id of selectedSongIds) {
+        const newFavs = await UserDB.toggleFavorite(currentUser.username, id);
+        currentUser.favorites = newFavs;
+    }
+    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+    alert('Favoritos actualizados.');
+    exitSelectMode();
+    renderSongs();
+}
+
+async function bulkAddToPlaylist() {
+    if (selectedSongIds.length === 0 || !currentUser) return;
+
+    const userPlaylists = await PlaylistDB.getPlaylistsByUser(currentUser.username);
+    if (userPlaylists.length === 0) return alert('No tienes playlists. Crea una primero.');
+
+    playlistSelectorList.innerHTML = userPlaylists.map(p => `
+        <div class="selector-item" data-id="${p.id}">${p.name}</div>
+    `).join('');
+
+    addToPlaylistModal.style.display = 'flex';
+
+    document.querySelectorAll('.selector-item').forEach(item => {
+        item.onclick = async () => {
+            const pid = parseInt(item.dataset.id);
+            for (const sid of selectedSongIds) {
+                await PlaylistDB.addSongToPlaylist(pid, sid);
+            }
+            alert('Canciones añadidas a la playlist!');
+            addToPlaylistModal.style.display = 'none';
+            exitSelectMode();
+        };
+    });
 }
 
 // Convierte ms o segundos a formato mm:ss
