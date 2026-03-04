@@ -1401,82 +1401,8 @@ function setupEventListeners() {
     document.getElementById('next-btn').onclick = nextSong;
     document.getElementById('prev-btn').onclick = prevSong;
 
-    // Initialize SoundCloud Widget - eventos se bindan UNA SOLA VEZ
-    function initSCWidget() {
-        scPlayerIframe = document.getElementById('sc-player');
-        if (!scPlayerIframe) return;
-
-        if (window.SC && SC.Widget) {
-            scWidget = SC.Widget(scPlayerIframe);
-            scWidget.bind(SC.Widget.Events.READY, () => {
-                console.log('[SC] Widget Ready');
-                widgetReady = true;
-                scWidget.setVolume(volumeSlider.value);
-                initMediaSessionHandlers();
-            });
-
-            scWidget.bind(SC.Widget.Events.PLAY, () => {
-                isLoadingNewSong = false;
-                clearTimeout(window._loadSongPlayTimeout);
-                clearTimeout(window._loadSongResetTimeout);
-                isPlaying = true;
-                userWantsToPlay = true;
-                playPauseBtn.textContent = '⏸';
-                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-                startKeepAlive();
-            });
-
-            scWidget.bind(SC.Widget.Events.PAUSE, () => {
-                if (isLoadingNewSong) return;
-                isPlaying = false;
-                playPauseBtn.textContent = '▶';
-                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-                stopKeepAlive();
-            });
-
-            scWidget.bind(SC.Widget.Events.FINISH, () => {
-                if (isLoadingNewSong) return;
-                startKeepAlive();
-                nextSong();
-            });
-
-            scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
-                if (!progressBar) return;
-
-                // 1. UI Updates (siempre, fluido)
-                progressBar.value = (data.relativePosition || 0) * 100;
-                if (currentTimeEl && data.currentPosition != null)
-                    currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
-                if (totalTimeEl && data.duration > 0)
-                    totalTimeEl.textContent = formatTime(data.duration / 1000);
-
-                // 2. MediaSession Throttling (cada 2s)
-                const now = Date.now();
-                if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
-                    try {
-                        if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-                            navigator.mediaSession.setPositionState({
-                                duration: data.duration / 1000,
-                                playbackRate: 1,
-                                position: Math.min(data.currentPosition / 1000, data.duration / 1000)
-                            });
-                        }
-                        window._lastMSUpdate = now;
-                    } catch (e) { /* ignore */ }
-                }
-            });
-
-            scWidget.bind(SC.Widget.Events.ERROR, () => {
-                console.error('[SC] Widget Error Event');
-                setStatus('Error en SoundCloud Widget');
-            });
-        } else {
-            console.warn('[SC] API not loaded yet, retrying in 1s...');
-            setTimeout(initSCWidget, 1000);
-        }
-    }
-
-    initSCWidget();
+    // Initialize SoundCloud Widget
+    bindWidgetEvents();
 
     // Setup Local Audio Element
     const audioElement = document.getElementById('audio-element');
@@ -1529,9 +1455,92 @@ function showMenu(event, index) {
 }
 
 function hideMenu() {
-    const menu = document.getElementById('context-menu');
-    if (menu) menu.style.display = 'none';
+    menu.style.display = 'none';
 }
+
+function bindWidgetEvents() {
+    scPlayerIframe = document.getElementById('sc-player');
+    if (!scPlayerIframe) return;
+
+    if (window.SC && SC.Widget) {
+        scWidget = SC.Widget(scPlayerIframe);
+
+        // Limpiar bindings para evitar memoria duplicada si se llama varias veces
+        try { scWidget.unbind(SC.Widget.Events.READY); } catch (e) { }
+        try { scWidget.unbind(SC.Widget.Events.PLAY); } catch (e) { }
+        try { scWidget.unbind(SC.Widget.Events.PAUSE); } catch (e) { }
+        try { scWidget.unbind(SC.Widget.Events.FINISH); } catch (e) { }
+        try { scWidget.unbind(SC.Widget.Events.PLAY_PROGRESS); } catch (e) { }
+        try { scWidget.unbind(SC.Widget.Events.ERROR); } catch (e) { }
+
+        scWidget.bind(SC.Widget.Events.READY, () => {
+            console.log('[SC] Widget Ready');
+            widgetReady = true;
+            if (volumeSlider) scWidget.setVolume(volumeSlider.value);
+            initMediaSessionHandlers();
+        });
+
+        scWidget.bind(SC.Widget.Events.PLAY, () => {
+            isLoadingNewSong = false;
+            clearTimeout(window._loadSongPlayTimeout);
+            clearTimeout(window._loadSongResetTimeout);
+            isPlaying = true;
+            userWantsToPlay = true;
+            playPauseBtn.textContent = '⏸';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            startKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.PAUSE, () => {
+            if (isLoadingNewSong) return;
+            isPlaying = false;
+            playPauseBtn.textContent = '▶';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            stopKeepAlive();
+        });
+
+        scWidget.bind(SC.Widget.Events.FINISH, () => {
+            if (isLoadingNewSong) return;
+            startKeepAlive();
+            nextSong();
+        });
+
+        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
+            if (!progressBar) return;
+
+            // 1. UI Updates
+            progressBar.value = (data.relativePosition || 0) * 100;
+            if (currentTimeEl && data.currentPosition != null)
+                currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
+            if (totalTimeEl && data.duration > 0)
+                totalTimeEl.textContent = formatTime(data.duration / 1000);
+
+            // 2. MediaSession Throttling
+            const now = Date.now();
+            if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
+                try {
+                    if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                        navigator.mediaSession.setPositionState({
+                            duration: data.duration / 1000,
+                            playbackRate: 1,
+                            position: Math.min(data.currentPosition / 1000, data.duration / 1000)
+                        });
+                    }
+                    window._lastMSUpdate = now;
+                } catch (e) { }
+            }
+        });
+
+        scWidget.bind(SC.Widget.Events.ERROR, () => {
+            console.error('[SC] Widget Error Event');
+            setStatus('Error en SoundCloud Widget');
+        });
+    } else {
+        console.warn('[SC] API not loaded yet, retrying in 1s...');
+        setTimeout(bindWidgetEvents, 1000);
+    }
+}
+
 
 async function deleteSongById(id) {
     if (confirm(`¿Seguro que quieres eliminar esta canción?`)) {
@@ -1703,19 +1712,35 @@ async function playSong(index) {
         isPlaying = false;
         userWantsToPlay = true;
 
-        scWidget.load(song.url, {
-            auto_play: true,
-            hide_related: true,
-            show_comments: false,
-            show_user: true,
-            show_reposts: false,
-            visual: false
-        });
+        // ESTRATEGIA DEFINITIVA MÓVIL: Recrear el iframe por completo en el clic.
+        // Los postMessage asíncronos de scWidget.load() pierden el "user gesture token" en Safari/Chrome móvil.
+        // Recrear el tag <iframe> y asignarle el src con auto_play=true dentro del hilo del clic
+        // delega correctamente el permiso de autoplay al iframe cross-origin.
 
-        // NOTA: Se ha eliminado scWidget.play() síncrono porque enviaba el comando
-        // antes de que el widget procesara la carga, rompiendo el estado interno.
-        // Con el global unlock de AudioContext añadido arriba, auto_play: true en load() 
-        // debería bastar ahora para Chrome/Safari móvil.
+        const oldIframe = document.getElementById('sc-player');
+        if (oldIframe) {
+            const newIframe = document.createElement('iframe');
+            newIframe.id = 'sc-player';
+            newIframe.width = '100%';
+            newIframe.height = '166';
+            newIframe.scrolling = 'no';
+            newIframe.frameBorder = 'no';
+            newIframe.allow = 'autoplay';
+            newIframe.style.display = 'none';
+
+            const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(song.url)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false`;
+            newIframe.src = embedUrl;
+
+            oldIframe.parentNode.replaceChild(newIframe, oldIframe);
+            scPlayerIframe = newIframe;
+
+            // Reinicializar la referencia del SC Widget
+            if (window.SC && SC.Widget) {
+                scWidget = SC.Widget(scPlayerIframe);
+                // Volver a enlazar los eventos para el nuevo widget
+                bindWidgetEvents();
+            }
+        }
 
         clearTimeout(window._loadSongResetTimeout);
 
