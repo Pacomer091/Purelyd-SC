@@ -1717,27 +1717,47 @@ async function playSong(index) {
                 trackId = trackId.substring(3); // Quitar prefijo sc-
             }
 
-            // Llamar a nuestra API CORS wrapper para obtener los streams
-            const data = await fetchSCApi(`/tracks/${trackId}`);
-            if (!data || !data.media || !data.media.transcodings) {
-                throw new Error("No media transcodings found");
+            // Primer intento: Pedir los transcodings v2 (más moderno)
+            let mp3StreamUrl = null;
+            try {
+                const data = await fetchSCApi(`/tracks/${trackId}`);
+                if (data && data.media && data.media.transcodings) {
+                    const progressiveTranscoding = data.media.transcodings.find(t => t.format.protocol === 'progressive');
+                    if (progressiveTranscoding && progressiveTranscoding.url) {
+                        const streamData = await fetchSCApi(progressiveTranscoding.url, true);
+                        if (streamData && streamData.url) {
+                            mp3StreamUrl = streamData.url;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("[SC] Fallo en API v2", e);
             }
 
-            // Buscar el stream progresivo mp3 (el formato más compatible con móvil/web)
-            const progressiveTranscoding = data.media.transcodings.find(t => t.format.protocol === 'progressive');
-
-            if (!progressiveTranscoding) {
-                throw new Error("Progressive stream not found for this track");
+            // Segundo intento: API v1 clásica (puede requerir redirección, el proxy lo maneja a veces)
+            if (!mp3StreamUrl) {
+                try {
+                    console.log("Intentando API v1 stream fallback...");
+                    const fallbackData = await fetchSCApi(`/tracks/${trackId}/stream`);
+                    if (fallbackData && fallbackData.http_mp3_128_url) {
+                        mp3StreamUrl = fallbackData.http_mp3_128_url;
+                    }
+                } catch (e) {
+                    console.warn("[SC] Fallo en API v1 fallback", e);
+                }
             }
 
-            // Obtener la URL real del stream (requiere client_id otra vez)
-            const streamData = await fetchSCApi(progressiveTranscoding.url, true); // true = raw absolute url
-            if (!streamData || !streamData.url) {
-                throw new Error("Failed to resolve final stream URL");
+            // Tercer intento: Formar la URL de stream directa (A veces bloqueada por falta de firma, pero vale de último recurso)
+            if (!mp3StreamUrl) {
+                mp3StreamUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${SC_CLIENT_ID}`;
+            }
+
+            if (!mp3StreamUrl) {
+                throw new Error("No pudimos extraer ninguna URL MP3 de streaming válida.");
             }
 
             // Poner el stream MP3 directo en el HTML5 Audio de Purelyd
-            localAudio.src = streamData.url;
+            localAudio.src = mp3StreamUrl;
             localAudio.play().catch(err => {
                 console.error("[SC] Error reproduciendo el stream directo:", err);
                 setStatus("El navegador bloqueó el autoplay. Pulsa Play.");
@@ -1748,7 +1768,7 @@ async function playSong(index) {
 
         } catch (error) {
             console.error("[SC Stream Resolution Error]:", error);
-            setStatus("Error al cargar la canción desde SC.");
+            setStatus("Error al cargar la canción (SC Error).");
             isLoadingNewSong = false;
         }
     }
