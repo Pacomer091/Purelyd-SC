@@ -1712,35 +1712,24 @@ async function playSong(index) {
         isPlaying = false;
         userWantsToPlay = true;
 
-        // ESTRATEGIA DEFINITIVA MÓVIL: Recrear el iframe por completo en el clic.
-        // Los postMessage asíncronos de scWidget.load() pierden el "user gesture token" en Safari/Chrome móvil.
-        // Recrear el tag <iframe> y asignarle el src con auto_play=true dentro del hilo del clic
-        // delega correctamente el permiso de autoplay al iframe cross-origin.
-
-        const oldIframe = document.getElementById('sc-player');
-        if (oldIframe) {
-            const newIframe = document.createElement('iframe');
-            newIframe.id = 'sc-player';
-            newIframe.width = '100%';
-            newIframe.height = '166';
-            newIframe.scrolling = 'no';
-            newIframe.frameBorder = 'no';
-            newIframe.allow = 'autoplay';
-            newIframe.style.display = 'none';
-
-            const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(song.url)}&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false`;
-            newIframe.src = embedUrl;
-
-            oldIframe.parentNode.replaceChild(newIframe, oldIframe);
-            scPlayerIframe = newIframe;
-
-            // Reinicializar la referencia del SC Widget
-            if (window.SC && SC.Widget) {
-                scWidget = SC.Widget(scPlayerIframe);
-                // Volver a enlazar los eventos para el nuevo widget
-                bindWidgetEvents();
-            }
+        // ESTRATEGIA MÓVIL DEFINITIVA: "The AudioContext Hack"
+        // 1. Iniciar un audio HTML5 silencioso SÍNCRONAMENTE en el mismo frame del click
+        // 2. Hacer el scWidget.load() asíncrono
+        // Dado que el canal de media ya se ha activado en el paso 1, el navegador móvil
+        // (Chrome/Safari) dejará pasar el auto_play del iframe cross-domain.
+        const silentAudio = document.getElementById('silent-audio');
+        if (silentAudio) {
+            silentAudio.play().catch(e => console.log("Silent audio blocked", e));
         }
+
+        scWidget.load(song.url, {
+            auto_play: true,
+            hide_related: true,
+            show_comments: false,
+            show_user: true,
+            show_reposts: false,
+            visual: false
+        });
 
         clearTimeout(window._loadSongResetTimeout);
 
