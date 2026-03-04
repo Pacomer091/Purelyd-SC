@@ -37,11 +37,11 @@ async function fetchSCApi(apiPath, isRawUrl = false) {
 }
 const DEFAULT_SONGS = [
     {
-        id: 1,
-        title: "Test Song (Drums)",
+        id: 'welcome-purelyd',
+        title: "Welcome to Purelyd SC",
         artist: "Purelyd",
-        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-        cover: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop",
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3", // A much more melodic, non-drum track
+        cover: "favicon.png",
         type: 'audio'
     }
 ];
