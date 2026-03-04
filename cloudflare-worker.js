@@ -118,18 +118,25 @@ async function handleStream(trackId, request) {
     if (response.status === 302 || response.status === 301 || response.status === 303) {
         const streamUrl = response.headers.get('Location');
         if (streamUrl) {
-            // Option 1: Just redirect the client to the MP3 URL
-            return new Response(null, {
-                status: 302,
+            // Option 2 (Proxying): Hacemos streaming a través del Worker 
+            // Esto evita que Chrome deniegue el CORS o que los tokens caduquen abruptamente
+            const audioResp = await fetch(streamUrl, {
                 headers: {
-                    'Location': streamUrl,
-                    ...WORKER_CORS_HEADERS
+                    Range: request.headers.get('Range') || 'bytes=0-'
                 }
             });
 
-            // Option 2 (Proxying): 
-            // const audioResp = await fetch(streamUrl, { headers: { Range: request.headers.get('Range') || 'bytes=0-' }});
-            // return new Response(audioResp.body, { status: audioResp.status, headers: { ...audioResp.headers, ...WORKER_CORS_HEADERS } });
+            // Pasar los headers esenciales de vuelta al reproductor HTML5
+            const responseHeaders = new Headers(WORKER_CORS_HEADERS);
+            responseHeaders.set('Content-Type', audioResp.headers.get('Content-Type') || 'audio/mpeg');
+            responseHeaders.set('Accept-Ranges', 'bytes');
+            if (audioResp.headers.has('Content-Range')) responseHeaders.set('Content-Range', audioResp.headers.get('Content-Range'));
+            if (audioResp.headers.has('Content-Length')) responseHeaders.set('Content-Length', audioResp.headers.get('Content-Length'));
+
+            return new Response(audioResp.body, {
+                status: audioResp.status,
+                headers: responseHeaders
+            });
         }
     } else if (response.ok) {
         // Sometimes it returns JSON with the http_mp3_128_url directly depending on the API variant
