@@ -1421,14 +1421,17 @@ function setupEventListeners() {
 
             scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
                 if (!progressBar) return;
+
+                // 1. UI Updates (siempre, fluido)
+                progressBar.value = (data.relativePosition || 0) * 100;
+                if (currentTimeEl && data.currentPosition != null)
+                    currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
+                if (totalTimeEl && data.duration > 0)
+                    totalTimeEl.textContent = formatTime(data.duration / 1000);
+
+                // 2. MediaSession Throttling (cada 2s)
                 const now = Date.now();
                 if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
-                    progressBar.value = (data.relativePosition || 0) * 100;
-                    if (currentTimeEl && data.currentPosition != null)
-                        currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
-                    if (totalTimeEl && data.duration > 0)
-                        totalTimeEl.textContent = formatTime(data.duration / 1000);
-
                     try {
                         if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
                             navigator.mediaSession.setPositionState({
@@ -1688,14 +1691,11 @@ async function playSong(index) {
             visual: false
         });
 
-        clearTimeout(window._loadSongPlayTimeout);
-        clearTimeout(window._loadSongResetTimeout);
+        // Llamar a play() síncronamente para que Android/iOS no bloqueen el auto-play por 
+        // perder el contexto original del click del usuario.
+        scWidget.play();
 
-        window._loadSongPlayTimeout = setTimeout(() => {
-            if (userWantsToPlay && isLoadingNewSong) {
-                scWidget.play();
-            }
-        }, 100);
+        clearTimeout(window._loadSongResetTimeout);
 
         window._loadSongResetTimeout = setTimeout(() => {
             if (isLoadingNewSong) {
