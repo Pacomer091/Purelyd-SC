@@ -1355,15 +1355,27 @@ function setupEventListeners() {
     playPauseBtn.onclick = togglePlay;
 
     progressBar.oninput = () => {
-        if (!scWidget || !widgetReady) return;
-        scWidget.getDuration((duration) => {
-            const timeMs = (progressBar.value / 100) * duration;
-            scWidget.seekTo(timeMs);
-        });
+        const audioElement = document.getElementById('audio-element');
+        if (audioElement && audioElement.duration > 0) {
+            const timeMs = (progressBar.value / 100) * audioElement.duration;
+            audioElement.currentTime = timeMs;
+        } else if (scWidget && widgetReady) {
+            // Fallback por si volvemos a requerir el widget iframe en PC en el futuro
+            scWidget.getDuration((duration) => {
+                const timeMs = (progressBar.value / 100) * duration;
+                scWidget.seekTo(timeMs);
+            });
+        }
     };
 
     volumeSlider.oninput = () => {
         const vol = volumeSlider.value;
+        const audioElement = document.getElementById('audio-element');
+
+        if (audioElement) {
+            audioElement.volume = vol / 100; // HTML Audio uses 0.0 to 1.0
+        }
+
         if (scWidget && widgetReady) {
             scWidget.setVolume(vol); // SC Widget volume is 0-100
         }
@@ -1432,9 +1444,25 @@ function setupEventListeners() {
         audioElement.onended = () => nextSong();
         audioElement.ontimeupdate = () => {
             if (audioElement.duration > 0) {
+                // UI Updates
                 progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
                 currentTimeEl.textContent = formatTime(audioElement.currentTime);
                 totalTimeEl.textContent = formatTime(audioElement.duration);
+
+                // MediaSession Throttling for native audio
+                const now = Date.now();
+                if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
+                    try {
+                        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                            navigator.mediaSession.setPositionState({
+                                duration: audioElement.duration,
+                                playbackRate: 1,
+                                position: audioElement.currentTime
+                            });
+                        }
+                        window._lastMSUpdate = now;
+                    } catch (e) { }
+                }
             }
         };
     }
@@ -1514,30 +1542,10 @@ function bindWidgetEvents() {
             nextSong();
         });
 
+        // Eliminar listeners de UI del Widget porque ahora el audio en móvil
+        // va íntegramente por el HTML5 Audio element
         scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
-            if (!progressBar) return;
-
-            // 1. UI Updates
-            progressBar.value = (data.relativePosition || 0) * 100;
-            if (currentTimeEl && data.currentPosition != null)
-                currentTimeEl.textContent = formatTime(data.currentPosition / 1000);
-            if (totalTimeEl && data.duration > 0)
-                totalTimeEl.textContent = formatTime(data.duration / 1000);
-
-            // 2. MediaSession Throttling
-            const now = Date.now();
-            if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
-                try {
-                    if (data.duration > 0 && 'mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-                        navigator.mediaSession.setPositionState({
-                            duration: data.duration / 1000,
-                            playbackRate: 1,
-                            position: Math.min(data.currentPosition / 1000, data.duration / 1000)
-                        });
-                    }
-                    window._lastMSUpdate = now;
-                } catch (e) { }
-            }
+            // No-op. Ahora el timeupdate lo maneja el audioElement
         });
 
         scWidget.bind(SC.Widget.Events.ERROR, () => {
