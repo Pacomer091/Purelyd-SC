@@ -1408,7 +1408,6 @@ function setupEventListeners() {
     const audioElement = document.getElementById('audio-element');
     // Para móvil, asegurarnos de que el audio puede reproducirse cross-origin
     if (audioElement) {
-        audioElement.crossOrigin = "anonymous";
         audioElement.onplay = () => {
             isPlaying = true;
             userWantsToPlay = true;
