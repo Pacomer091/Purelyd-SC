@@ -9,29 +9,37 @@ const CORS_PROXIES = [
     (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
 ];
 
-async function fetchSCApi(apiPath) {
+async function fetchSCApi(apiPath, isRawUrl = false) {
+    let urlToFetch = apiPath;
+    if (!isRawUrl) {
+        urlToFetch = SC_API_BASE + apiPath;
+    }
+    // Asegurar client_id siempre para no ser rechazados (401)
+    if (!urlToFetch.includes('client_id=')) {
+        urlToFetch += (urlToFetch.includes('?') ? '&' : '?') + 'client_id=' + SC_CLIENT_ID;
+    }
+
     for (const proxy of CORS_PROXIES) {
         try {
-            const proxyUrl = proxy(apiPath);
+            const proxyUrl = proxy(urlToFetch);
             const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
             if (response.ok) {
                 const text = await response.text();
-                // Algunos proxies devuelven error en el body aunque status sea 200
                 if (text.startsWith('{') || text.startsWith('[')) {
                     return JSON.parse(text);
                 }
             }
         } catch (e) {
-            console.warn(`[SC Proxy] Proxy falló, intentando siguiente...`, e.message);
+            console.warn(`[SC Proxy] Proxy falló, intentando siguiente...`);
         }
     }
-    throw new Error('Todos los proxies CORS fallaron. Comprueba tu conexión.');
+    throw new Error('Todos los proxies CORS fallaron.');
 }
 const DEFAULT_SONGS = [
     {
         id: 1,
-        title: "Welcome to Purelyd SC",
-        artist: "Assistant",
+        title: "Test Song (Drums)",
+        artist: "Purelyd",
         url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
         cover: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop",
         type: 'audio'
@@ -1685,7 +1693,17 @@ async function playSong(index) {
 
     // Stop whichever engine might be running
     const localAudio = document.getElementById('audio-element');
-    if (localAudio) localAudio.pause();
+
+    if (localAudio) {
+        // [HACK SÍNCRONO MÓVIL] Reclamar el token de usuario instantáneamente con un WAV vacío.
+        // Si reproducimos esto dentro del mismo tick del click (antes del await), Firefox/Safari/Chrome
+        // móvil marcan el <audio> como "autorizado por el usuario para autoplay" y cuando el await
+        // termina podemos poner la URL real y volver a darle a play sin ser bloqueados.
+        localAudio.pause();
+        localAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+        localAudio.play().catch(() => { });
+    }
+
     if (scWidget && widgetReady) {
         try { scWidget.pause(); } catch (e) { }
     }
