@@ -226,12 +226,17 @@ const RealtimeManager = {
             copyRoomBtn.style.display = 'inline-block';
             leaveRoomBtn.style.display = 'inline-block';
             joinRoomBtn.style.display = 'none';
+            if (navShared) {
+                navShared.style.display = 'block';
+                navShared.click(); // Force view switch
+            }
         } else {
             sharedRoomID.textContent = "---";
             roomStatusEl.textContent = "Sin sala activa";
             joinRoomBtn.style.display = 'inline-block';
             copyRoomBtn.style.display = 'none';
             leaveRoomBtn.style.display = 'none';
+            if (navShared) navShared.style.display = 'none';
         }
     }
 };
@@ -412,12 +417,29 @@ function renderSongs() {
     if (mainHeading) {
         if (currentPlaylistId === 'favorites') mainHeading.textContent = 'Mis Favoritos';
         else if (currentPlaylistId === 'uploads') mainHeading.textContent = 'Subido por mí';
+        else if (currentPlaylistId === 'shared') mainHeading.textContent = '🔊 Sala de Escucha en Vivo';
         else if (currentPlaylistId) {
             const p = playlists.find(p => p.id === currentPlaylistId);
             mainHeading.textContent = p ? p.name : 'Playlist';
         } else {
             mainHeading.textContent = searchTerm ? 'Resultados' : 'Purelyd SC';
         }
+    }
+
+    // Shared View content injection
+    if (currentPlaylistId === 'shared') {
+        songGrid.innerHTML = `
+            <div class="shared-view-container" style="grid-column: 1 / -1; background: rgba(255,255,255,0.02); border-radius: 20px; padding: 40px; text-align: center; border: 1px dashed rgba(255,255,255,0.1);">
+                <div style="font-size: 3rem; margin-bottom: 20px;">🔴</div>
+                <h2 style="margin-bottom: 10px;">ID DE SALA: <span style="color: var(--accent-red); font-family: monospace;">${currentRoom}</span></h2>
+                <p style="color: var(--text-secondary); margin-bottom: 30px;">${isHost ? 'Estás emitiendo tu música para otros oyentes.' : 'Estas escuchando en vivo lo que reproduce el host.'}</p>
+                <div style="display: flex; justify-content: center; gap: 20px;">
+                    <button class="btn-new-playlist" onclick="RealtimeManager.leaveRoom()" style="width: auto; background: #444;">Salir de la sala</button>
+                    <button class="btn-new-playlist" onclick="copyRoomBtn.click()" style="width: auto;">Copiar ID para invitar</button>
+                </div>
+            </div>
+        `;
+        return;
     }
 
     // HOME VIEW: Show action cards instead of all songs
@@ -917,11 +939,26 @@ function setupEventListeners() {
         navFavorites.classList.add('active');
         navHome.classList.remove('active');
         navUploads.classList.remove('active');
+        if (navShared) navShared.classList.remove('active');
         if (navTrending) navTrending.classList.remove('active');
         await loadUserSongs();
         renderSongs();
         renderPlaylists();
     };
+
+    if (navShared) {
+        navShared.onclick = (e) => {
+            if (e) e.preventDefault();
+            if (!currentRoom) return;
+            currentPlaylistId = 'shared';
+            navShared.classList.add('active');
+            navHome.classList.remove('active');
+            navFavorites.classList.remove('active');
+            navUploads.classList.remove('active');
+            if (navTrending) navTrending.classList.remove('active');
+            renderSongs();
+        };
+    }
 
     newPlaylistBtn.onclick = () => {
         if (!currentUser) return alert('Debes iniciar sesión para crear playlists.');
