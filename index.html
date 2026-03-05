@@ -34,6 +34,26 @@
                 <a href="#" id="nav-favorites"><i class="icon-heart"></i> Favorites</a>
                 <a href="#" id="nav-uploads"><i class="icon-library"></i> Subido por mí</a>
             </nav>
+
+            <div class="shared-listening-card"
+                style="margin: 20px 0; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                <div style="font-weight: bold; margin-bottom: 10px; font-size: 0.9rem; color: var(--accent-red);">🔴
+                    Escucha Compartida</div>
+                <div id="room-info" style="font-size: 0.8rem; margin-bottom: 15px;">
+                    <div style="color: var(--text-secondary);">SALA: <span id="shared-room-id"
+                            style="color: white; font-family: monospace; font-weight: bold;">---</span></div>
+                    <div id="room-status" style="font-style: italic; opacity: 0.7; margin-top: 5px;">Sin sala activa
+                    </div>
+                </div>
+                <div class="shared-actions" style="display: flex; gap: 8px;">
+                    <button id="join-room-btn" class="btn-new-playlist"
+                        style="flex: 1; padding: 6px; margin: 0; font-size: 0.75rem;">Unirse</button>
+                    <button id="leave-room-btn" class="btn-new-playlist"
+                        style="flex: 1; padding: 6px; margin: 0; font-size: 0.75rem; display: none; background: #444;">Salir</button>
+                    <button id="copy-room-btn" class="btn-new-playlist"
+                        style="padding: 6px; margin: 0; font-size: 0.75rem; display: none; width: auto;">📋</button>
+                </div>
+            </div>
             <div class="playlists-section">
                 <button id="add-song-btn" class="btn-new-playlist" style="margin-bottom: 12px;">+ Add Song</button>
                 <button id="bulk-import-btn" class="btn-new-playlist"

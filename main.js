@@ -61,6 +61,13 @@ let editingSongId = null;
 let isSelectMode = false;
 let selectedSongIds = [];
 
+// Shared Listening State
+let currentRoom = null;
+let realtimeChannel = null;
+let lastSyncTimestamp = 0;
+let isHost = false;
+let isSyncing = false; // Flag to prevent event loops
+
 // DOM Elements
 const songGrid = document.getElementById('song-grid');
 const addSongBtn = document.getElementById('add-song-btn');
@@ -77,27 +84,136 @@ const logoutBtn = document.getElementById('logout-btn');
 const loginStatusText = document.getElementById('login-status-text');
 const userAvatar = document.getElementById('user-avatar');
 
-// Navigation elements
-const navHome = document.getElementById('nav-home');
-const navTrending = document.getElementById('nav-trending');
-const navFavorites = document.getElementById('nav-favorites');
-const navUploads = document.getElementById('nav-uploads');
-const navPlaylists = document.getElementById('nav-playlists');
+// Shared Room elements
+const navShared = document.getElementById('nav-shared');
+const sharedRoomID = document.getElementById('shared-room-id');
+const copyRoomBtn = document.getElementById('copy-room-btn');
+const joinRoomBtn = document.getElementById('join-room-btn');
+const leaveRoomBtn = document.getElementById('leave-room-btn');
+const roomStatusEl = document.getElementById('room-status');
 
-// Playlist elements
-const newPlaylistBtn = document.getElementById('new-playlist-btn');
-const playlistList = document.getElementById('playlist-list');
-const playlistCardList = document.getElementById('playlist-card-list');
-const addToPlaylistModal = document.getElementById('add-to-playlist-modal');
-const playlistSelectorList = document.getElementById('playlist-selector-list');
-const closePlaylistModal = document.getElementById('close-playlist-modal');
-const closeAddToPlaylist = document.getElementById('close-add-to-playlist');
-const playlistModal = document.getElementById('playlist-modal');
-const playlistForm = document.getElementById('playlist-form');
-const playlistItemsContainer = document.getElementById('playlist-items');
+// Realtime Manager Logic
+const RealtimeManager = {
+    async createRoom() {
+        if (!currentUser) return this.joinPrompt();
+        try {
+            const roomId = await RoomDB.createRoom(currentUser.username);
+            this.joinRoom(roomId, true);
+        } catch (e) {
+            console.error("Error creating room:", e);
+        }
+    },
 
-// Player elements
-const playPauseBtn = document.getElementById('play-pause-btn');
+    joinPrompt() {
+        const id = prompt("Introduce el ID de la sala:");
+        if (id) this.joinRoom(id.toUpperCase().trim(), false);
+    },
+
+    joinRoom(roomId, asHost = false) {
+        if (realtimeChannel) this.leaveRoom();
+
+        currentRoom = roomId;
+        isHost = asHost;
+        const supabase = getSupabase();
+
+        realtimeChannel = supabase.channel(`room:${roomId}`, {
+            config: { broadcast: { self: false } }
+        });
+
+        realtimeChannel
+            .on('broadcast', { event: 'sync' }, ({ payload }) => {
+                if (!isHost) this.handleSyncEvent(payload);
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log(`[Realtime] Subscribed to room: ${roomId}`);
+                    this.updateUI();
+                }
+            });
+    },
+
+    leaveRoom() {
+        if (realtimeChannel) {
+            realtimeChannel.unsubscribe();
+            realtimeChannel = null;
+        }
+        currentRoom = null;
+        isHost = false;
+        this.updateUI();
+    },
+
+    broadcastSync(eventData) {
+        if (!isHost || !realtimeChannel) return;
+
+        const payload = {
+            ...eventData,
+            sender: currentUser?.username,
+            timestamp: Date.now(),
+            currentSong: songs[currentSongIndex]
+        };
+
+        realtimeChannel.send({
+            type: 'broadcast',
+            event: 'sync',
+            payload
+        });
+    },
+
+    handleSyncEvent(payload) {
+        isSyncing = true;
+        const localAudio = document.getElementById('audio-element');
+        if (!localAudio) return;
+
+        console.log("[Realtime] Sync received:", payload.type);
+
+        // 1. Sync Song if different
+        const currentLocalSong = songs[currentSongIndex];
+        if (!currentLocalSong || currentLocalSong.id !== payload.currentSong.id) {
+            // Find song in library or add it temporarily
+            const songIdx = songs.findIndex(s => s.id === payload.currentSong.id);
+            if (songIdx !== -1) {
+                playSong(songIdx, false); // Don't broadcast this
+            } else {
+                // Temporary add and play
+                songs.push(payload.currentSong);
+                playSong(songs.length - 1, false);
+            }
+        }
+
+        // 2. Sync Playback State
+        if (payload.type === 'play' && localAudio.paused) {
+            localAudio.play();
+        } else if (payload.type === 'pause' && !localAudio.paused) {
+            localAudio.pause();
+        }
+
+        // 3. Sync Seek with Latency Compensation
+        const latency = (Date.now() - payload.timestamp) / 1000;
+        const targetTime = payload.currentTime + latency;
+
+        if (Math.abs(localAudio.currentTime - targetTime) > 2) {
+            localAudio.currentTime = targetTime;
+        }
+
+        isSyncing = false;
+    },
+
+    updateUI() {
+        if (currentRoom) {
+            sharedRoomID.textContent = currentRoom;
+            roomStatusEl.textContent = isHost ? "Eres el HOST" : "Conectado como OYENTE";
+            copyRoomBtn.style.display = 'inline-block';
+            leaveRoomBtn.style.display = 'inline-block';
+            joinRoomBtn.style.display = 'none';
+        } else {
+            sharedRoomID.textContent = "---";
+            roomStatusEl.textContent = "Sin sala activa";
+            joinRoomBtn.style.display = 'inline-block';
+            copyRoomBtn.style.display = 'none';
+            leaveRoomBtn.style.display = 'none';
+        }
+    }
+};
 const progressBar = document.getElementById('progress-bar');
 const currentTimeEl = document.querySelector('.current-time');
 const totalTimeEl = document.querySelector('.total-time');
@@ -1174,6 +1290,24 @@ function setupEventListeners() {
 
     playPauseBtn.onclick = togglePlay;
 
+    // Shared Room Events
+    joinRoomBtn.onclick = () => {
+        if (currentUser) {
+            if (confirm("¿Quieres crear una sala nueva? Si pulsas 'Cancelar' podrás unirte a una existente.")) {
+                RealtimeManager.createRoom();
+            } else {
+                RealtimeManager.joinPrompt();
+            }
+        } else {
+            RealtimeManager.joinPrompt();
+        }
+    };
+    leaveRoomBtn.onclick = () => RealtimeManager.leaveRoom();
+    copyRoomBtn.onclick = () => {
+        navigator.clipboard.writeText(currentRoom);
+        alert(`ID de sala ${currentRoom} copiado al portapapeles!`);
+    };
+
     progressBar.onmousedown = () => isDraggingProgress = true;
     progressBar.ontouchstart = () => isDraggingProgress = true;
 
@@ -1442,11 +1576,15 @@ async function exportAllSongs() {
     alert("Lista de canciones exportada a la consola (F12). Copiamela para incluirla en el despliegue.");
 }
 
-async function playSong(index) {
+async function playSong(index, shouldBroadcast = true) {
     if (index < 0 || index >= songs.length) return;
     currentSongIndex = index;
     const song = songs[index];
     if (!song) return;
+
+    if (shouldBroadcast && isHost) {
+        RealtimeManager.broadcastSync({ type: 'play', currentTime: 0 });
+    }
 
     // Update UI
     const songNameEl = document.querySelector('.player-song-info .song-name');
@@ -1656,8 +1794,10 @@ function togglePlay() {
     if (localAudio) {
         if (localAudio.paused) {
             localAudio.play();
+            if (isHost) RealtimeManager.broadcastSync({ type: 'play', currentTime: localAudio.currentTime });
         } else {
             localAudio.pause();
+            if (isHost) RealtimeManager.broadcastSync({ type: 'pause', currentTime: localAudio.currentTime });
         }
     }
 }

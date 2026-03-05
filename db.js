@@ -185,6 +185,38 @@ const PlaylistDB = {
     }
 };
 
+// Room Operations (Shared Listening)
+const RoomDB = {
+    async createRoom(hostUsername) {
+        const roomId = Math.random().toString(36).substring(2, 8).toUpperCase(); // Short readable code
+        const { error } = await getSupabase().from('sc_rooms').insert([{
+            id: roomId,
+            host_username: hostUsername,
+            is_active: true
+        }]);
+        if (error) throw error;
+        return roomId;
+    },
+
+    async getRoom(roomId) {
+        const { data, error } = await getSupabase().from('sc_rooms').select('*').eq('id', roomId).single();
+        if (error && error.code !== 'PGRST116') throw error;
+        return data;
+    },
+
+    async updateRoom(roomId, updates) {
+        const { error } = await getSupabase().from('sc_rooms').update(updates).eq('id', roomId);
+        if (error) throw error;
+        return true;
+    },
+
+    async deleteRoom(roomId) {
+        const { error } = await getSupabase().from('sc_rooms').delete().eq('id', roomId);
+        if (error) throw error;
+        return true;
+    }
+};
+
 // Compatibility shim for older init code
 function openDB() {
     return Promise.resolve(true);
