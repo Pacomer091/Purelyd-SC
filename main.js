@@ -84,8 +84,29 @@ const logoutBtn = document.getElementById('logout-btn');
 const loginStatusText = document.getElementById('login-status-text');
 const userAvatar = document.getElementById('user-avatar');
 
+// Navigation elements
+const navHome = document.getElementById('nav-home');
+const navTrending = document.getElementById('nav-trending');
+const navFavorites = document.getElementById('nav-favorites');
+const navUploads = document.getElementById('nav-uploads');
+const navPlaylists = document.getElementById('nav-playlists');
+
+// Playlist elements
+const newPlaylistBtn = document.getElementById('new-playlist-btn');
+const playlistList = document.getElementById('playlist-list');
+const playlistCardList = document.getElementById('playlist-card-list');
+const addToPlaylistModal = document.getElementById('add-to-playlist-modal');
+const playlistSelectorList = document.getElementById('playlist-selector-list');
+const closePlaylistModal = document.getElementById('close-playlist-modal');
+const closeAddToPlaylist = document.getElementById('close-add-to-playlist');
+const playlistModal = document.getElementById('playlist-modal');
+const playlistForm = document.getElementById('playlist-form');
+const playlistItemsContainer = document.getElementById('playlist-items');
+
+// Player elements
+const playPauseBtn = document.getElementById('play-pause-btn');
+
 // Shared Room elements
-const navShared = document.getElementById('nav-shared');
 const sharedRoomID = document.getElementById('shared-room-id');
 const copyRoomBtn = document.getElementById('copy-room-btn');
 const joinRoomBtn = document.getElementById('join-room-btn');
