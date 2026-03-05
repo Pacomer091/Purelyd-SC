@@ -10,9 +10,19 @@ const CORS_PROXIES = [
 ];
 
 async function fetchSCApi(apiPath, isRawUrl = false) {
-    let urlToFetch = apiPath;
-    if (!isRawUrl) {
-        urlToFetch = SC_API_BASE + apiPath;
+    if (!apiPath) return null;
+
+    let urlToFetch = apiPath.toString();
+    // Bulletproof: if it's already a full URL, don't prepend SC_API_BASE
+    const isFullUrl = urlToFetch.startsWith('http');
+
+    if (!isRawUrl && !isFullUrl) {
+        urlToFetch = SC_API_BASE + (urlToFetch.startsWith('/') ? '' : '/') + urlToFetch;
+    }
+
+    // Safety check for any previous duplication
+    if (urlToFetch.includes('soundcloud.comhttps')) {
+        urlToFetch = urlToFetch.replace('https://api-v2.soundcloud.comhttps://api-v2.soundcloud.com', 'https://api-v2.soundcloud.com');
     }
     // Asegurar client_id siempre para no ser rechazados (401)
     if (!urlToFetch.includes('client_id=')) {
@@ -35,59 +45,21 @@ async function fetchSCApi(apiPath, isRawUrl = false) {
     }
     throw new Error('Todos los proxies CORS fallaron.');
 }
-const DEFAULT_SONGS = [
-    {
-        id: 'welcome-purelyd',
-        title: "Welcome to Purelyd SC",
-        artist: "Purelyd",
-        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3", // A much more melodic, non-drum track
-        cover: "favicon.png",
-        type: 'audio'
-    }
-];
+const DEFAULT_SONGS = []; // No default songs to avoid annoying "drums" or test tracks.
 
 let songs = [];
 let currentUser = null;
-let users = [];
-let playlists = [];
-let currentPlaylistId = null; // null means 'Home' or 'Library'
+let currentPlaylistId = null;
 let searchTerm = '';
-let isDraggingProgress = false; // Prevent jitter when scrubbing
-
-
-// Global error handler for debugging
-window.onerror = function (msg, url, line) {
-    console.error(`[Global Error] ${msg} at ${line}`);
-};
+let isDraggingProgress = false;
 
 let currentSongIndex = 0;
 let isPlaying = false;
-let audioContext = null;
+let userWantsToPlay = false;
+let isLoadingNewSong = false;
 let editingSongId = null;
 let isSelectMode = false;
 let selectedSongIds = [];
-
-// === AUDIO CONTEXT UNLOCK FOR MOBILE ===
-// Los navegadores móviles bloquean el autoplay de iframes (como SoundCloud).
-// Reproducir un audio nativo vacío en el primer tap del usuario desbloquea el contexto a nivel global.
-let audioUnlocked = false;
-function unlockAudioContext() {
-    if (audioUnlocked) return;
-    const silent = document.getElementById('silent-audio');
-    if (silent) {
-        silent.play().then(() => {
-            silent.pause();
-            audioUnlocked = true;
-            console.log("[Audio] Global AudioContext unlocked for mobile.");
-            document.removeEventListener('touchstart', unlockAudioContext);
-            document.removeEventListener('click', unlockAudioContext);
-        }).catch(e => console.log("[Audio] Unlock failed or ignored:", e));
-    }
-}
-document.addEventListener('touchstart', unlockAudioContext, { once: true, passive: true });
-document.addEventListener('click', unlockAudioContext, { once: true, passive: true });
-
-let userWantsToPlay = false;
 
 // DOM Elements
 const songGrid = document.getElementById('song-grid');
@@ -105,22 +77,45 @@ const logoutBtn = document.getElementById('logout-btn');
 const loginStatusText = document.getElementById('login-status-text');
 const userAvatar = document.getElementById('user-avatar');
 
+// Navigation elements
+const navHome = document.getElementById('nav-home');
+const navTrending = document.getElementById('nav-trending');
+const navFavorites = document.getElementById('nav-favorites');
+const navUploads = document.getElementById('nav-uploads');
+const navPlaylists = document.getElementById('nav-playlists');
+
 // Playlist elements
 const newPlaylistBtn = document.getElementById('new-playlist-btn');
+const playlistList = document.getElementById('playlist-list');
+const playlistCardList = document.getElementById('playlist-card-list');
+const addToPlaylistModal = document.getElementById('add-to-playlist-modal');
+const playlistSelectorList = document.getElementById('playlist-selector-list');
+const closePlaylistModal = document.getElementById('close-playlist-modal');
+const closeAddToPlaylist = document.getElementById('close-add-to-playlist');
 const playlistModal = document.getElementById('playlist-modal');
 const playlistForm = document.getElementById('playlist-form');
 const playlistItemsContainer = document.getElementById('playlist-items');
-const closePlaylistModal = document.getElementById('close-playlist-modal');
-const addToPlaylistModal = document.getElementById('add-to-playlist-modal');
-const playlistSelectorList = document.getElementById('playlist-selector-list');
-const closeAddToPlaylist = document.getElementById('close-add-to-playlist');
-const navHome = document.getElementById('nav-home');
-const navUploads = document.getElementById('nav-uploads');
-const navFavorites = document.getElementById('nav-favorites');
+
+// Player elements
+const playPauseBtn = document.getElementById('play-pause-btn');
+const progressBar = document.getElementById('progress-bar');
+const currentTimeEl = document.querySelector('.current-time');
+const totalTimeEl = document.querySelector('.total-time');
+const volumeSlider = document.getElementById('volume-slider');
+const playerStatus = document.getElementById('player-status');
+
+// Bulk actions
+const multiActionBar = document.getElementById('multi-action-bar');
+const selectedCountEl = document.getElementById('selected-count');
+const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+const bulkFavBtn = document.getElementById('bulk-fav-btn');
+const bulkPlaylistBtn = document.getElementById('bulk-playlist-btn');
+const toggleSelectBtn = document.getElementById('toggle-select-mode');
+const cancelSelectBtn = document.getElementById('cancel-select-btn');
+
+// Other Shared Elements
 const menuAddPlaylist = document.getElementById('menu-add-playlist');
 const menuFavorite = document.getElementById('menu-favorite');
-
-// Bulk Import elements
 const bulkImportBtn = document.getElementById('bulk-import-btn');
 const bulkImportModal = document.getElementById('bulk-import-modal');
 const bulkUrlsArea = document.getElementById('bulk-urls');
@@ -130,39 +125,18 @@ const importStatus = document.getElementById('import-status');
 const importProgressText = document.getElementById('import-progress-text');
 const importProgressBar = document.getElementById('import-progress-bar');
 
-// New Auth Elements
+// Auth & Genres
 const authConfirmPassword = document.getElementById('auth-confirm-password');
 const genreModal = document.getElementById('genre-modal');
 const genreGrid = document.getElementById('genre-grid');
 const saveGenresBtn = document.getElementById('save-genres');
 
-// SoundCloud Official Widget Reference
-let scPlayerIframe = null;
-let scWidget = null;
-let widgetReady = false;
-let isLoadingNewSong = false; // Flag para ignorar eventos espurios durante carga
-
-const playPauseBtn = document.getElementById('play-pause-btn');
-const progressBar = document.getElementById('progress-bar');
-const currentTimeEl = document.querySelector('.current-time');
-const totalTimeEl = document.querySelector('.total-time');
-const volumeSlider = document.getElementById('volume-slider');
-
-const playerStatus = document.getElementById('player-status');
-const toggleSelectBtn = document.getElementById('toggle-select-mode');
-const multiActionBar = document.getElementById('multi-action-bar');
-const selectedCountEl = document.querySelector('.selected-count');
-const bulkFavBtn = document.getElementById('bulk-fav-btn');
-const bulkPlaylistBtn = document.getElementById('bulk-playlist-btn');
-const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
-const cancelSelectBtn = document.getElementById('cancel-select-btn');
-
-const menuToggle = document.getElementById('menu-toggle');
+// Navigation & Sidebar
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 const sidebar = document.querySelector('.sidebar');
 const searchInput = document.getElementById('search-input');
 
-// Mobile Nav Elements
+// Mobile Nav
 const mobileNavHome = document.getElementById('mobile-nav-home');
 const mobileNavAdd = document.getElementById('mobile-nav-add');
 const mobileNavLibrary = document.getElementById('mobile-nav-library');
@@ -180,202 +154,46 @@ function setStatus(msg) {
     console.log(`[Status] ${msg}`);
 }
 
-// Utility functions for audio playback
 function nextSong() {
+    if (songs.length === 0) return;
     let nextIndex = (currentSongIndex + 1) % songs.length;
     playSong(nextIndex);
 }
 
 function prevSong() {
+    if (songs.length === 0) return;
     let prevIndex = (currentSongIndex - 1 + songs.length) % songs.length;
     playSong(prevIndex);
 }
 
 // Initialize
 async function init() {
-    console.log("Initializing application...");
+    console.log("Initializing Purelyd SC (Native Mode)...");
 
     // 1. Load session first
-    currentUser = JSON.parse(localStorage.getItem('purelydsc-current-user'));
+    const savedUser = localStorage.getItem('purelydsc-current-user');
+    if (savedUser) {
+        currentUser = JSON.parse(savedUser);
+        if (loginStatusText) loginStatusText.textContent = currentUser.username;
+        if (userAvatar) userAvatar.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.username}`;
+    }
 
-    // 2. Mandatory UI Setup
+    // 2. Setup UI and Handlers
+    initMediaSessionHandlers();
     setupEventListeners();
     updateAuthUI();
-    initMediaSessionHandlers();
 
     try {
-        console.log("Connecting to Supabase Cloud...");
-
-        // Refresh users from cloud
-        users = await UserDB.getAllUsers();
-        console.log("Cloud users loaded.");
-
-        if (currentUser) {
-            await migrateLegacyToSC(currentUser.username);
-        }
-
         await loadUserSongs();
         await loadPlaylists();
 
         renderPlaylists();
         renderSongs();
-
-        console.log("Cloud data synchronized.");
+        console.log("Data loaded successfully.");
     } catch (e) {
-        console.warn("CLOUD SYNC FAILED (showing default songs):", e);
-        // Fallback to defaults
-        songs = [...DEFAULT_SONGS];
+        console.warn("Data load failed, showing empty library:", e);
+        songs = [];
         renderSongs();
-    }
-    console.log("Init complete.");
-}
-
-// Utility to migrate local data to cloud
-async function migrateToCloud() {
-    console.log("Starting cloud migration...");
-    const DB_NAME = 'purelyd_db';
-    const DB_VERSION = 2;
-
-    const openOldDB = () => {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onsuccess = (e) => resolve(e.target.result);
-            request.onerror = (e) => reject(e.target.error);
-        });
-    };
-
-    try {
-        const oldDb = await openOldDB();
-        const transaction = oldDb.transaction(['songs'], 'readonly');
-        const store = transaction.objectStore('songs');
-        const request = store.getAll();
-
-        request.onsuccess = async () => {
-            const oldSongs = request.result;
-            if (oldSongs.length === 0) {
-                alert("No se encontraron canciones locales para migrar.");
-                return;
-            }
-
-            console.log(`Migrando ${oldSongs.length} canciones...`);
-            let count = 0;
-            for (const song of oldSongs) {
-                try {
-                    // Upload to Supabase using our new SongDB
-                    await SongDB.addSong(song, song.username || 'invitado');
-                    count++;
-                } catch (err) {
-                    console.error("Error migrando canciÃ³n:", song.title, err);
-                }
-            }
-
-            localStorage.setItem('purelyd-cloud-migrated', 'true');
-            alert(`Â¡MigraciÃ³n completada! Se han subido ${count} canciones a la nube.`);
-            window.location.reload(); // Reload to show new data
-        };
-    } catch (e) {
-        console.error("Error abriendo la base de datos antigua:", e);
-        alert("No se pudo acceder a los datos locales antiguos.");
-    }
-}
-
-async function migrateData() {
-    const migratedKey = 'purelyd-migrated-to-idb';
-    if (localStorage.getItem(migratedKey)) return;
-
-    console.log("Starting data migration to IndexedDB...");
-
-    // Migrate Users
-    const localUsers = JSON.parse(localStorage.getItem('purelyd-users')) || [];
-    for (const user of localUsers) {
-        try {
-            await UserDB.addUser(user);
-            console.log(`Migrated user: ${user.username}`);
-
-            // Migrate Songs for this user
-            const localSongs = JSON.parse(localStorage.getItem(`purelyd-songs-${user.username}`)) || [];
-            for (const song of localSongs) {
-                await SongDB.addSong(song, user.username);
-            }
-            console.log(`Migrated ${localSongs.length} songs for user: ${user.username}`);
-        } catch (e) {
-            console.warn(`Error migrating user ${user.username}:`, e);
-        }
-    }
-
-    localStorage.setItem(migratedKey, 'true');
-    console.log("Migration complete.");
-}
-
-async function migrateLegacyToSC(username) {
-    const migratedKey = `sc-migrated-${username}`;
-    if (localStorage.getItem(migratedKey)) return;
-
-    try {
-        console.log("[Auto-Migration] Checking for legacy YouTube songs...");
-        setStatus("Verificando biblioteca antigua...");
-
-        // 1. Fetch old YouTube songs from the original DB table (read-only)
-        const legacySongs = await SongDB.getLegacySongsByUser(username);
-        if (!legacySongs || legacySongs.length === 0) {
-            console.log("[Auto-Migration] No legacy songs found. Marking as done.");
-            localStorage.setItem(migratedKey, 'true');
-            return;
-        }
-
-        // 2. See if they already exist in the new SC table
-        const currentSCSongs = await SongDB.getSongsByUser(username);
-        if (currentSCSongs && currentSCSongs.length >= legacySongs.length) {
-            console.log("[Auto-Migration] SC library already populated. Skipping.");
-            localStorage.setItem(migratedKey, 'true');
-            return;
-        }
-
-        console.log(`[Auto-Migration] Found ${legacySongs.length} legacy songs. Starting background SC conversion...`);
-        alert(`¡Hola! Estamos actualizando tu biblioteca vieja al nuevo sistema de alta calidad de SoundCloud. Esto puede tardar unos segundos, por favor no cierres la página... 🎵🚀`);
-
-        let migratedCount = 0;
-
-        // 3. Migrate each song silently
-        for (const oldSong of legacySongs) {
-            if (oldSong.type === 'youtube') {
-                setStatus(`Migrando: ${oldSong.title}...`);
-                const scMatch = await fetchSCReplacement(`${oldSong.title} ${oldSong.artist || ''}`.trim());
-
-                if (scMatch) {
-                    // Keep user's custom title/artist, but swap the underlying engine data
-                    const newSong = {
-                        ...oldSong,
-                        id: scMatch.id, // Must update ID so the player doesn't trip on old YT IDs
-                        url: scMatch.url,
-                        cover: scMatch.cover || oldSong.cover,
-                        type: 'soundcloud',
-                        durationMs: scMatch.durationMs || oldSong.durationMs
-                    };
-
-                    await SongDB.addSong(newSong, username);
-                    migratedCount++;
-                    console.log(`[Auto-Migration] Converted: ${oldSong.title} -> ${scMatch.title}`);
-                } else {
-                    console.warn(`[Auto-Migration] No SC match found for: ${oldSong.title}. Skipping.`);
-                }
-
-                // Be polite to the SC API proxy
-                await new Promise(r => setTimeout(r, 800));
-            }
-        }
-
-        localStorage.setItem(migratedKey, 'true');
-        console.log(`[Auto-Migration] Finished. Successfully converted ${migratedCount}/${legacySongs.length} tracks.`);
-
-        if (migratedCount > 0) {
-            alert(`¡Migración Lista! Hemos rescatado ${migratedCount} canciones de tu antigua biblioteca a SoundCloud Oficial. A disfrutar. 🎉`);
-            // Force a hard refresh of the local lists
-            window.location.reload();
-        }
-    } catch (e) {
-        console.error("[Auto-Migration] Fatal Error during migration:", e);
-        setStatus("Error en la migración SC.");
     }
 }
 
@@ -651,7 +469,7 @@ function renderSongs() {
     // SEARCH / PLAYLIST VIEW: Show songs
     const favIds = currentUser ? (currentUser.favorites || []) : [];
 
-    const filteredSongs = songs.filter(song => {
+    const filteredSongs = (currentPlaylistId === 'search' || currentPlaylistId === 'trending') ? songs : songs.filter(song => {
         const query = searchTerm.toLowerCase();
         return song.title.toLowerCase().includes(query) ||
             song.artist.toLowerCase().includes(query);
@@ -741,7 +559,7 @@ function mapSCTrackToPurelyd(track) {
 async function fetchSCReplacement(title) {
     if (!title) return null;
     try {
-        const apiPath = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(title)}&client_id=${SC_CLIENT_ID}&limit=5`;
+        const apiPath = `/search/tracks?q=${encodeURIComponent(title)}&limit=5`;
         const data = await fetchSCApi(apiPath);
         const tracks = Array.isArray(data) ? data : (data.collection || []);
         const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
@@ -772,7 +590,7 @@ function setupEventListeners() {
 
             try {
                 // Usando proxy CORS con fallback automático
-                const apiPath = `${SC_API_BASE}/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${SC_CLIENT_ID}&limit=20`;
+                const apiPath = `/search/tracks?q=${encodeURIComponent(searchTerm)}&limit=20`;
                 const data = await fetchSCApi(apiPath);
                 const tracks = Array.isArray(data) ? data : (data.collection || []);
                 const validTracks = tracks.filter(t => t.kind === 'track' && t.streamable);
@@ -927,7 +745,7 @@ function setupEventListeners() {
                 // Determine user's top genre if possible, or fallback to pop/hiphop
                 const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
                 const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
-                const apiPath = `${SC_API_BASE}/search/tracks?q=${tags}&client_id=${SC_CLIENT_ID}&limit=40`;
+                const apiPath = `/search/tracks?q=${tags}&limit=40`;
                 const data = await fetchSCApi(apiPath);
                 let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
                 tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
@@ -1094,7 +912,7 @@ function setupEventListeners() {
             importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(lines[0])}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `/resolve?url=${encodeURIComponent(lines[0])}`;
                 const data = await fetchSCApi(apiPath);
 
                 if (data && data.kind === 'playlist' && data.tracks) {
@@ -1118,7 +936,7 @@ function setupEventListeners() {
             importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
                 const trackData = await fetchSCApi(apiPath);
                 if (trackData && trackData.kind === 'track') {
                     const track = mapSCTrackToPurelyd(trackData);
@@ -1163,7 +981,7 @@ function setupEventListeners() {
         if (url.includes('soundcloud.com')) {
             console.log("Resolving SC metadata for:", url);
             try {
-                const apiPath = `${SC_API_BASE}/resolve?url=${encodeURIComponent(url)}&client_id=${SC_CLIENT_ID}`;
+                const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
                 const trackData = await fetchSCApi(apiPath);
                 if (trackData && trackData.kind === 'track') {
                     const track = mapSCTrackToPurelyd(trackData);
@@ -1362,13 +1180,8 @@ function setupEventListeners() {
     progressBar.onchange = () => {
         const audioElement = document.getElementById('audio-element');
         if (audioElement && audioElement.duration > 0) {
-            const timeMs = (progressBar.value / 100) * audioElement.duration;
-            audioElement.currentTime = timeMs;
-        } else if (scWidget && widgetReady) {
-            scWidget.getDuration((duration) => {
-                const timeMs = (progressBar.value / 100) * duration;
-                scWidget.seekTo(timeMs);
-            });
+            const newTime = (progressBar.value / 100) * audioElement.duration;
+            audioElement.currentTime = newTime;
         }
         isDraggingProgress = false;
     };
@@ -1383,13 +1196,8 @@ function setupEventListeners() {
     volumeSlider.oninput = () => {
         const vol = volumeSlider.value;
         const audioElement = document.getElementById('audio-element');
-
         if (audioElement) {
-            audioElement.volume = vol / 100; // HTML Audio uses 0.0 to 1.0
-        }
-
-        if (scWidget && widgetReady) {
-            scWidget.setVolume(vol); // SC Widget volume is 0-100
+            audioElement.volume = vol / 100;
         }
     };
 
@@ -1433,10 +1241,7 @@ function setupEventListeners() {
     document.getElementById('next-btn').onclick = nextSong;
     document.getElementById('prev-btn').onclick = prevSong;
 
-    // Initialize SoundCloud Widget
-    bindWidgetEvents();
-
-    // Setup Local Audio Element as PRIMARY ENGINE
+    // Setup Local Audio Element as THE ONLY ENGINE
     const audioElement = document.getElementById('audio-element');
     // Para móvil, asegurarnos de que el audio puede reproducirse cross-origin
     if (audioElement) {
@@ -1506,59 +1311,8 @@ function showMenu(event, index) {
 }
 
 function hideMenu() {
-    menu.style.display = 'none';
-}
-
-function bindWidgetEvents() {
-    scPlayerIframe = document.getElementById('sc-player');
-    if (!scPlayerIframe) return;
-
-    if (window.SC && SC.Widget) {
-        scWidget = SC.Widget(scPlayerIframe);
-
-        // Limpiar bindings para evitar memoria duplicada si se llama varias veces
-        try { scWidget.unbind(SC.Widget.Events.READY); } catch (e) { }
-        try { scWidget.unbind(SC.Widget.Events.PLAY); } catch (e) { }
-        try { scWidget.unbind(SC.Widget.Events.PAUSE); } catch (e) { }
-        try { scWidget.unbind(SC.Widget.Events.FINISH); } catch (e) { }
-        try { scWidget.unbind(SC.Widget.Events.PLAY_PROGRESS); } catch (e) { }
-        try { scWidget.unbind(SC.Widget.Events.ERROR); } catch (e) { }
-
-        scWidget.bind(SC.Widget.Events.READY, () => {
-            console.log('[SC] Widget Ready');
-            widgetReady = true;
-            if (volumeSlider) scWidget.setVolume(volumeSlider.value);
-            initMediaSessionHandlers();
-        });
-
-        scWidget.bind(SC.Widget.Events.PLAY, () => {
-            // Ignorar eventos del widget para la UI en este modo unificado
-            console.log('[SC] Widget Play Event (Ignored for UI)');
-        });
-
-        scWidget.bind(SC.Widget.Events.PAUSE, () => {
-            console.log('[SC] Widget Pause Event (Ignored for UI)');
-        });
-
-        scWidget.bind(SC.Widget.Events.FINISH, () => {
-            console.log('[SC] Widget Finish Event (Ignored for UI)');
-            // No llamar a nextSong() desde aquí; el audioElement se encarga
-        });
-
-        // Eliminar listeners de UI del Widget porque ahora el audio en móvil
-        // va íntegramente por el HTML5 Audio element
-        scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, (data) => {
-            // No-op. Ahora el timeupdate lo maneja el audioElement
-        });
-
-        scWidget.bind(SC.Widget.Events.ERROR, () => {
-            console.error('[SC] Widget Error Event');
-            setStatus('Error en SoundCloud Widget');
-        });
-    } else {
-        console.warn('[SC] API not loaded yet, retrying in 1s...');
-        setTimeout(bindWidgetEvents, 1000);
-    }
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.style.display = 'none';
 }
 
 
@@ -1689,39 +1443,35 @@ async function exportAllSongs() {
 }
 
 async function playSong(index) {
+    if (index < 0 || index >= songs.length) return;
     currentSongIndex = index;
     const song = songs[index];
     if (!song) return;
 
     // Update UI
-    document.querySelector('.player-song-info .song-name').textContent = song.title;
-    document.querySelector('.player-song-info .artist-name').textContent = song.artist;
+    const songNameEl = document.querySelector('.player-song-info .song-name');
+    const artistNameEl = document.querySelector('.player-song-info .artist-name');
+    const playerCoverEl = document.querySelector('.player-cover');
+
+    if (songNameEl) songNameEl.textContent = song.title;
+    if (artistNameEl) artistNameEl.textContent = song.artist || 'Unknown Artist';
+
     const cover = song.cover || getThumbnail(song);
-    document.querySelector('.player-cover').style.backgroundImage = `url(${cover})`;
-    document.querySelector('.player-cover').style.backgroundSize = 'cover';
+    if (playerCoverEl) {
+        playerCoverEl.style.backgroundImage = `url(${cover})`;
+        playerCoverEl.style.backgroundSize = 'cover';
+    }
 
     setStatus(`▶ ${song.title}`);
 
-    // Stop whichever engine might be running
     const localAudio = document.getElementById('audio-element');
+    if (!localAudio) return;
 
-    if (localAudio) {
-        // [HACK SÍNCRONO MÓVIL] Reclamar el token de usuario instantáneamente con un WAV vacío.
-        // Si reproducimos esto dentro del mismo tick del click (antes del await), Firefox/Safari/Chrome
-        // móvil marcan el <audio> como "autorizado por el usuario para autoplay" y cuando el await
-        // termina podemos poner la URL real y volver a darle a play sin ser bloqueados.
-        localAudio.pause();
-        localAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-        localAudio.play().catch(() => { });
-    }
-
-    if (scWidget && widgetReady) {
-        try { scWidget.pause(); } catch (e) { }
-    }
+    // Stop current playback
+    localAudio.pause();
+    localAudio.src = "";
 
     const isDirectAudio = song.type === 'audio' || song.url.includes('.mp3') || song.url.includes('.wav') || song.url.includes('googleusercontent');
-
-    if (!localAudio) return;
 
     if (isDirectAudio) {
         localAudio.src = song.url;
@@ -1731,72 +1481,55 @@ async function playSong(index) {
         });
         updateMediaSession(song);
     } else {
-        // ESTRATEGIA DEFINITIVA MÓVIL: No usar el iframe de SoundCloud para reproducir.
-        // SoundCloud bloquea activamente el autoplay en iframes móviles desde 2018.
-        // Solución: Extraer el stream progresivo de SC y ponerlo en nuestro <audio> nativo.
-
-        setStatus('Resolviendo stream de SoundCloud...');
+        // RESOLVER STREAM DE SOUNDCLOUD (MODO NATIVO)
+        setStatus('Resolviendo stream...');
         isLoadingNewSong = true;
 
         try {
-            // Resolver SC track id desde la URL completa
             let trackId = song.id;
             if (typeof trackId === 'string' && trackId.startsWith('sc-')) {
-                trackId = trackId.substring(3); // Quitar prefijo sc-
+                trackId = trackId.substring(3);
             }
 
-            // Primer intento: Pedir los transcodings v2 (más moderno)
             let mp3StreamUrl = null;
+            // Intento 1: API v2 Transcodings
             try {
                 const data = await fetchSCApi(`/tracks/${trackId}`);
                 if (data && data.media && data.media.transcodings) {
-                    const progressiveTranscoding = data.media.transcodings.find(t => t.format.protocol === 'progressive');
-                    if (progressiveTranscoding && progressiveTranscoding.url) {
-                        const streamData = await fetchSCApi(progressiveTranscoding.url, true);
-                        if (streamData && streamData.url) {
-                            mp3StreamUrl = streamData.url;
-                        }
+                    const prog = data.media.transcodings.find(t => t.format.protocol === 'progressive');
+                    if (prog && prog.url) {
+                        const streamData = await fetchSCApi(prog.url, true);
+                        if (streamData && streamData.url) mp3StreamUrl = streamData.url;
                     }
                 }
-            } catch (e) {
-                console.warn("[SC] Fallo en API v2", e);
-            }
+            } catch (e) { console.warn("[SC] v2 failed", e); }
 
-            // Segundo intento: API v1 clásica (puede requerir redirección, el proxy lo maneja a veces)
+            // Intento 2: API v1 fallback
             if (!mp3StreamUrl) {
                 try {
-                    console.log("Intentando API v1 stream fallback...");
-                    const fallbackData = await fetchSCApi(`/tracks/${trackId}/stream`);
-                    if (fallbackData && fallbackData.http_mp3_128_url) {
-                        mp3StreamUrl = fallbackData.http_mp3_128_url;
-                    }
-                } catch (e) {
-                    console.warn("[SC] Fallo en API v1 fallback", e);
-                }
+                    const fb = await fetchSCApi(`/tracks/${trackId}/stream`);
+                    if (fb && fb.http_mp3_128_url) mp3StreamUrl = fb.http_mp3_128_url;
+                } catch (e) { console.warn("[SC] v1 failed", e); }
             }
 
-            // Tercer intento: Formar la URL de stream directa (A veces bloqueada por falta de firma, pero vale de último recurso)
+            // Intento 3: Direct URL
             if (!mp3StreamUrl) {
                 mp3StreamUrl = `https://api.soundcloud.com/tracks/${trackId}/stream?client_id=${SC_CLIENT_ID}`;
             }
 
-            if (!mp3StreamUrl) {
-                throw new Error("No pudimos extraer ninguna URL MP3 de streaming válida.");
-            }
+            if (!mp3StreamUrl) throw new Error("No stream URL");
 
-            // Poner el stream MP3 directo en el HTML5 Audio de Purelyd
             localAudio.src = mp3StreamUrl;
             localAudio.play().catch(err => {
-                console.error("[SC] Error reproduciendo el stream directo:", err);
-                setStatus("El navegador bloqueó el autoplay. Pulsa Play.");
+                console.error("[SC] Play blocked:", err);
+                setStatus("Play bloqueado. Pulsa ▶");
             });
 
             isLoadingNewSong = false;
             updateMediaSession(song);
-
         } catch (error) {
-            console.error("[SC Stream Resolution Error]:", error);
-            setStatus("Error al cargar la canción (SC Error).");
+            console.error("[SC Error]:", error);
+            setStatus("Error cargando canción.");
             isLoadingNewSong = false;
         }
     }
@@ -1912,11 +1645,6 @@ function stopKeepAlive() {
 }
 
 document.addEventListener('visibilitychange', () => {
-    if (userWantsToPlay && !document.hidden && !isPlaying && scWidget) {
-        // Si el usuario quería reproducir pero el navegador lo pausó (ej. al salir de app),
-        // intentar darle un 'poke' al volver a entrar
-        scWidget.play();
-    }
     if (userWantsToPlay) startKeepAlive();
 });
 
