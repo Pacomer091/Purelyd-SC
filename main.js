@@ -123,6 +123,7 @@ const RealtimeManager = {
             this.joinRoom(roomId, true);
         } catch (e) {
             console.error("Error creating room:", e);
+            alert(`No se pudo crear la sala.\nError: ${e.message || "Error desconocido"}\n\nVerifica que la tabla sc_rooms existe en Supabase y que el Realtime está activado.`);
         }
     },
 

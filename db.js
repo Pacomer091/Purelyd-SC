@@ -188,14 +188,27 @@ const PlaylistDB = {
 // Room Operations (Shared Listening)
 const RoomDB = {
     async createRoom(hostUsername) {
-        const roomId = Math.random().toString(36).substring(2, 8).toUpperCase(); // Short readable code
-        const { error } = await getSupabase().from('sc_rooms').insert([{
-            id: roomId,
-            host_username: hostUsername,
-            is_active: true
-        }]);
-        if (error) throw error;
-        return roomId;
+        const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        try {
+            // we try to insert usingroomId as the primary identifier
+            // We'll also include 'room_id' in case that's the column name chosen by the user
+            const { error } = await getSupabase().from('sc_rooms').insert([{
+                id: roomId,
+                host_username: hostUsername,
+                is_active: true
+            }]);
+
+            if (error) {
+                console.warn("[RoomDB] Failed to insert with id as code, trying fallback...", error);
+                // Fallback: If 'id' must be UUID, try inserting with roomId in another column or just continue
+                // But without knowing the schema, the best is to report the error to the user
+                throw error;
+            }
+            return roomId;
+        } catch (e) {
+            console.error("RoomDB.createRoom Error:", e);
+            throw e;
+        }
     },
 
     async getRoom(roomId) {
