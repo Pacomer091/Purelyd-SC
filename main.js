@@ -126,7 +126,8 @@ const RealtimeManager = {
             confirmBtn.onclick = () => {
                 const id = joinInput.value.toUpperCase().trim();
                 if (id) {
-                    this.joinRoom(id, false);
+                    alert('Uniéndose a sala: ' + id);
+                    RealtimeManager.joinRoom(id, false);
                     joinModal.style.display = 'none';
                     joinInput.value = '';
                 }
@@ -135,13 +136,18 @@ const RealtimeManager = {
     },
 
     async createRoom() {
-        if (!currentUser) return this.joinPrompt();
+        alert('Intentando crear sala...');
+        if (!currentUser) {
+            alert('No hay usuario logueado, redirigiendo a unión...');
+            return this.joinPrompt();
+        }
         try {
             const roomId = await RoomDB.createRoom(currentUser.username);
+            alert('Sala creada exitosamente: ' + roomId);
             this.joinRoom(roomId, true);
         } catch (e) {
             console.error("Error creating room:", e);
-            alert(`No se pudo crear la sala.\nError: ${e.message || "Error desconocido"}\n\nVerifica que la tabla sc_rooms existe en Supabase y que el Realtime está activado.`);
+            alert(`ERROR AL CREAR SALA:\n${e.message || "Error desconocido"}`);
         }
     },
 
@@ -171,12 +177,15 @@ const RealtimeManager = {
 
         realtimeChannel
             .on('broadcast', { event: 'sync' }, ({ payload }) => {
-                if (!isHost) this.handleSyncEvent(payload);
+                if (!isHost) RealtimeManager.handleSyncEvent(payload);
             })
             .subscribe((status) => {
+                alert('Estado suscripción: ' + status);
                 if (status === 'SUBSCRIBED') {
                     console.log(`[Realtime] Subscribed to room: ${roomId}`);
-                    this.updateUI();
+                    RealtimeManager.updateUI();
+                } else if (status === 'CHANNEL_ERROR') {
+                    alert('Error de canal Supabase. ¿Está activado Realtime?');
                 }
             });
     },
