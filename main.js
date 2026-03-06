@@ -1,4 +1,4 @@
-﻿// SoundCloud Official Direct API
+// SoundCloud Official Direct API
 const SC_CLIENT_ID = 'FqfkxJZWPZt411KWUg3pxbwm43M6UalQ';
 const SC_API_BASE = 'https://api-v2.soundcloud.com';
 
@@ -90,6 +90,7 @@ const navTrending = document.getElementById('nav-trending');
 const navFavorites = document.getElementById('nav-favorites');
 const navUploads = document.getElementById('nav-uploads');
 const navPlaylists = document.getElementById('nav-playlists');
+const navShared = document.getElementById('nav-shared');
 
 // Playlist elements
 const newPlaylistBtn = document.getElementById('new-playlist-btn');
