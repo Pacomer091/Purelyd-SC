@@ -874,10 +874,8 @@ function setupEventListeners() {
             // Show playlists in the main content area
             const mainHeading = document.querySelector('.content-area h1');
             if (mainHeading) mainHeading.textContent = 'Mis Playlists';
-            renderPlaylists();
-        };
-    }
-    songGrid.innerHTML = playlists.map(p => `
+
+            songGrid.innerHTML = playlists.map(p => `
             <div class="song-card" data-playlist-id="${p.id}" style="cursor:pointer;">
                 <div class="song-cover" style="background: linear-gradient(135deg, #ff6600, #ff9933); display:flex; align-items:center; justify-content:center; font-size:2.5rem;">📁</div>
                 <div class="song-info">
@@ -894,635 +892,637 @@ function setupEventListeners() {
                 </div>
             </div>
         `;
-    // Attach click handlers for each playlist card
-    document.querySelectorAll('[data-playlist-id]').forEach(card => {
-        card.onclick = async () => {
-            currentPlaylistId = parseInt(card.dataset.playlistId);
+            // Attach click handlers for each playlist card
+            document.querySelectorAll('[data-playlist-id]').forEach(card => {
+                card.onclick = async () => {
+                    currentPlaylistId = parseInt(card.dataset.playlistId);
+                    navHome.classList.remove('active');
+                    navUploads.classList.remove('active');
+                    navFavorites.classList.remove('active');
+                    await loadUserSongs();
+                    renderSongs();
+                    renderPlaylists();
+                };
+            });
+            // Back to home handler
+            const backBtn = document.getElementById('mobile-back-home');
+            if (backBtn) backBtn.onclick = () => navHome.click();
+        };
+    }
+
+    // Close overlays when clicking close or outside (the overlay itself is the backdrop)
+    document.querySelectorAll('.sheet-close, .nav-sheet').forEach(el => {
+        el.onclick = (e) => {
+            if (e.target === el || el.classList.contains('sheet-close')) {
+                mobileAddOverlay.classList.remove('active');
+                mobileLibOverlay.classList.remove('active');
+            }
+        };
+    });
+
+    // Navigation Handlers
+    navHome.onclick = async (e) => {
+        if (e) e.preventDefault();
+        currentPlaylistId = null;
+        navHome.classList.add('active');
+        navUploads.classList.remove('active');
+        navFavorites.classList.remove('active');
+        if (navTrending) navTrending.classList.remove('active');
+        await loadUserSongs();
+        renderSongs();
+        renderPlaylists();
+    };
+
+    // navTrending already declared above
+    if (navTrending) {
+        navTrending.onclick = async (e) => {
+            e.preventDefault();
+            currentPlaylistId = 'trending';
+            navTrending.classList.add('active');
             navHome.classList.remove('active');
             navUploads.classList.remove('active');
             navFavorites.classList.remove('active');
-            await loadUserSongs();
+            // Show loading spinner immediately
+            songs = [];
             renderSongs();
-            renderPlaylists();
+
+            try {
+                // Determine user's top genre if possible, or fallback to pop/hiphop
+                const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
+                const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
+                const apiPath = `/search/tracks?q=${tags}&limit=40`;
+                const data = await fetchSCApi(apiPath);
+                let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
+                tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
+                songs = tracks.map(mapSCTrackToPurelyd);
+            } catch (err) {
+                console.error("Error fetching trending list:", err);
+            }
+            // Check if user is still on trending view before re-rendering
+            if (currentPlaylistId === 'trending') {
+                renderSongs();
+            }
         };
-    });
-    // Back to home handler
-    const backBtn = document.getElementById('mobile-back-home');
-    if (backBtn) backBtn.onclick = () => navHome.click();
-};
+    }
 
-// Close overlays when clicking close or outside (the overlay itself is the backdrop)
-document.querySelectorAll('.sheet-close, .nav-sheet').forEach(el => {
-    el.onclick = (e) => {
-        if (e.target === el || el.classList.contains('sheet-close')) {
-            mobileAddOverlay.classList.remove('active');
-            mobileLibOverlay.classList.remove('active');
-        }
-    };
-});
-
-// Navigation Handlers
-navHome.onclick = async (e) => {
-    if (e) e.preventDefault();
-    currentPlaylistId = null;
-    navHome.classList.add('active');
-    navUploads.classList.remove('active');
-    navFavorites.classList.remove('active');
-    if (navTrending) navTrending.classList.remove('active');
-    await loadUserSongs();
-    renderSongs();
-    renderPlaylists();
-};
-
-// navTrending already declared above
-if (navTrending) {
-    navTrending.onclick = async (e) => {
+    navUploads.onclick = async (e) => {
         e.preventDefault();
-        currentPlaylistId = 'trending';
-        navTrending.classList.add('active');
-        navHome.classList.remove('active');
-        navUploads.classList.remove('active');
-        navFavorites.classList.remove('active');
-        // Show loading spinner immediately
-        songs = [];
-        renderSongs();
-
-        try {
-            // Determine user's top genre if possible, or fallback to pop/hiphop
-            const genre = (currentUser && currentUser.genres && currentUser.genres.length > 0) ? currentUser.genres[0] : 'pop,hiphop,electronic';
-            const tags = encodeURIComponent(genre || 'pop,hiphop,electronic,reggaeton');
-            const apiPath = `/search/tracks?q=${tags}&limit=40`;
-            const data = await fetchSCApi(apiPath);
-            let tracks = (Array.isArray(data) ? data : (data.collection || [])).filter(t => t.kind === 'track' && t.streamable);
-            tracks.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
-            songs = tracks.map(mapSCTrackToPurelyd);
-        } catch (err) {
-            console.error("Error fetching trending list:", err);
-        }
-        // Check if user is still on trending view before re-rendering
-        if (currentPlaylistId === 'trending') {
-            renderSongs();
-        }
-    };
-}
-
-navUploads.onclick = async (e) => {
-    e.preventDefault();
-    if (!currentUser) return showAuthModal();
-    currentPlaylistId = 'uploads';
-    navUploads.classList.add('active');
-    navHome.classList.remove('active');
-    navFavorites.classList.remove('active');
-    if (navTrending) navTrending.classList.remove('active');
-    await loadUserSongs();
-    renderSongs();
-    renderPlaylists();
-};
-
-navFavorites.onclick = async (e) => {
-    e.preventDefault();
-    if (!currentUser) return showAuthModal();
-    currentPlaylistId = 'favorites';
-    navFavorites.classList.add('active');
-    navHome.classList.remove('active');
-    navUploads.classList.remove('active');
-    if (navShared) navShared.classList.remove('active');
-    if (navTrending) navTrending.classList.remove('active');
-    await loadUserSongs();
-    renderSongs();
-    renderPlaylists();
-};
-
-if (navShared) {
-    navShared.onclick = (e) => {
-        if (e) e.preventDefault();
-        if (!currentRoom) return;
-        currentPlaylistId = 'shared';
-        navShared.classList.add('active');
+        if (!currentUser) return showAuthModal();
+        currentPlaylistId = 'uploads';
+        navUploads.classList.add('active');
         navHome.classList.remove('active');
         navFavorites.classList.remove('active');
-        navUploads.classList.remove('active');
         if (navTrending) navTrending.classList.remove('active');
+        await loadUserSongs();
         renderSongs();
-    };
-}
-
-newPlaylistBtn.onclick = () => {
-    if (!currentUser) return alert('Debes iniciar sesión para crear playlists.');
-    playlistModal.style.display = 'flex';
-};
-
-closePlaylistModal.onclick = () => playlistModal.style.display = 'none';
-
-playlistForm.onsubmit = async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('playlist-name').value;
-    try {
-        await PlaylistDB.addPlaylist({
-            name,
-            username: currentUser.username,
-            song_ids: []
-        });
-        playlistModal.style.display = 'none';
-        playlistForm.reset();
-        await loadPlaylists();
         renderPlaylists();
-        alert('Playlist "' + name + '" creada!');
-    } catch (err) {
-        console.error('Error creating playlist:', err);
-        alert('Error al crear la playlist: ' + err.message);
+    };
+
+    navFavorites.onclick = async (e) => {
+        e.preventDefault();
+        if (!currentUser) return showAuthModal();
+        currentPlaylistId = 'favorites';
+        navFavorites.classList.add('active');
+        navHome.classList.remove('active');
+        navUploads.classList.remove('active');
+        if (navShared) navShared.classList.remove('active');
+        if (navTrending) navTrending.classList.remove('active');
+        await loadUserSongs();
+        renderSongs();
+        renderPlaylists();
+    };
+
+    if (navShared) {
+        navShared.onclick = (e) => {
+            if (e) e.preventDefault();
+            if (!currentRoom) return;
+            currentPlaylistId = 'shared';
+            navShared.classList.add('active');
+            navHome.classList.remove('active');
+            navFavorites.classList.remove('active');
+            navUploads.classList.remove('active');
+            if (navTrending) navTrending.classList.remove('active');
+            renderSongs();
+        };
     }
-};
 
-menuAddPlaylist.onclick = () => {
-    if (menuTargetIndex === null) return;
-    const song = songs[menuTargetIndex];
-    showAddToPlaylistModal(song.id);
-    hideMenu();
-};
+    newPlaylistBtn.onclick = () => {
+        if (!currentUser) return alert('Debes iniciar sesión para crear playlists.');
+        playlistModal.style.display = 'flex';
+    };
 
-menuFavorite.onclick = async () => {
-    if (menuTargetIndex === null || !currentUser) return;
-    const song = songs[menuTargetIndex];
+    closePlaylistModal.onclick = () => playlistModal.style.display = 'none';
 
-    const isCurrentlyFav = (currentUser.favorites || []).map(id => id.toString()).includes(song.id.toString());
-
-    // Si se va a AÑADIR como favorito, guardar primero la canción en la BD
-    if (!isCurrentlyFav) {
+    playlistForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('playlist-name').value;
         try {
-            await SongDB.addSong({ ...song, username: currentUser.username }, currentUser.username);
-        } catch (e) {
-            console.warn('[Favorites] No se pudo guardar la canción en sc_songs:', e);
+            await PlaylistDB.addPlaylist({
+                name,
+                username: currentUser.username,
+                song_ids: []
+            });
+            playlistModal.style.display = 'none';
+            playlistForm.reset();
+            await loadPlaylists();
+            renderPlaylists();
+            alert('Playlist "' + name + '" creada!');
+        } catch (err) {
+            console.error('Error creating playlist:', err);
+            alert('Error al crear la playlist: ' + err.message);
         }
-    }
+    };
 
-    const newFavs = await UserDB.toggleFavorite(currentUser.username, song.id);
-    currentUser.favorites = newFavs;
-    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+    menuAddPlaylist.onclick = () => {
+        if (menuTargetIndex === null) return;
+        const song = songs[menuTargetIndex];
+        showAddToPlaylistModal(song.id);
+        hideMenu();
+    };
 
-    hideMenu();
-    renderSongs(); // Always re-render to show/hide heart icon immediately
+    menuFavorite.onclick = async () => {
+        if (menuTargetIndex === null || !currentUser) return;
+        const song = songs[menuTargetIndex];
 
-};
+        const isCurrentlyFav = (currentUser.favorites || []).map(id => id.toString()).includes(song.id.toString());
 
-// Multi-select handlers
-toggleSelectBtn.onclick = toggleSelectMode;
-cancelSelectBtn.onclick = exitSelectMode;
-bulkDeleteBtn.onclick = bulkDelete;
-bulkFavBtn.onclick = bulkFavorite;
-bulkPlaylistBtn.onclick = bulkAddToPlaylist;
+        // Si se va a AÑADIR como favorito, guardar primero la canción en la BD
+        if (!isCurrentlyFav) {
+            try {
+                await SongDB.addSong({ ...song, username: currentUser.username }, currentUser.username);
+            } catch (e) {
+                console.warn('[Favorites] No se pudo guardar la canción en sc_songs:', e);
+            }
+        }
 
-async function showAddToPlaylistModal(songId) {
-    const userPlaylists = await PlaylistDB.getPlaylistsByUser(currentUser.username);
-    playlistSelectorList.innerHTML = userPlaylists.map(p => `
+        const newFavs = await UserDB.toggleFavorite(currentUser.username, song.id);
+        currentUser.favorites = newFavs;
+        localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+
+        hideMenu();
+        renderSongs(); // Always re-render to show/hide heart icon immediately
+
+    };
+
+    // Multi-select handlers
+    toggleSelectBtn.onclick = toggleSelectMode;
+    cancelSelectBtn.onclick = exitSelectMode;
+    bulkDeleteBtn.onclick = bulkDelete;
+    bulkFavBtn.onclick = bulkFavorite;
+    bulkPlaylistBtn.onclick = bulkAddToPlaylist;
+
+    async function showAddToPlaylistModal(songId) {
+        const userPlaylists = await PlaylistDB.getPlaylistsByUser(currentUser.username);
+        playlistSelectorList.innerHTML = userPlaylists.map(p => `
             <div class="selector-item" data-id="${p.id}">${p.name}</div>
         `).join('');
 
-    document.querySelectorAll('.selector-item').forEach(item => {
-        item.onclick = async () => {
-            await PlaylistDB.addSongToPlaylist(parseInt(item.dataset.id), songId);
-            alert('Canción añadida!');
-            addToPlaylistModal.style.display = 'none';
-        };
+        document.querySelectorAll('.selector-item').forEach(item => {
+            item.onclick = async () => {
+                await PlaylistDB.addSongToPlaylist(parseInt(item.dataset.id), songId);
+                alert('Canción añadida!');
+                addToPlaylistModal.style.display = 'none';
+            };
+        });
+
+        addToPlaylistModal.style.display = 'flex';
+    }
+
+    closeAddToPlaylist.onclick = () => addToPlaylistModal.style.display = 'none';
+
+    // Helper to close specific mobile elements
+    function closeSidebarMobile() {
+        if (window.innerWidth <= 768) {
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
+        }
+    }
+
+    // Add closeSidebarMobile to navigation clicks
+    document.querySelectorAll('.nav-links a, #playlist-items').forEach(el => {
+        const oldClick = el.onclick;
+        el.addEventListener('click', () => closeSidebarMobile());
     });
 
-    addToPlaylistModal.style.display = 'flex';
-}
+    // Bulk Import Logic
+    bulkImportBtn.onclick = () => {
+        if (!currentUser) return showAuthModal();
+        bulkImportModal.style.display = 'flex';
+        importStatus.style.display = 'none';
+        bulkUrlsArea.value = '';
+    };
 
-closeAddToPlaylist.onclick = () => addToPlaylistModal.style.display = 'none';
+    closeBulkModal.onclick = () => {
+        bulkImportModal.style.display = 'none';
+    };
 
-// Helper to close specific mobile elements
-function closeSidebarMobile() {
-    if (window.innerWidth <= 768) {
-        sidebar.classList.remove('active');
-        sidebarOverlay.classList.remove('active');
-    }
-}
+    startBulkImportBtn.onclick = async () => {
+        const text = bulkUrlsArea.value.trim();
+        if (!text) return alert('Por favor, pega algunos enlaces.');
 
-// Add closeSidebarMobile to navigation clicks
-document.querySelectorAll('.nav-links a, #playlist-items').forEach(el => {
-    const oldClick = el.onclick;
-    el.addEventListener('click', () => closeSidebarMobile());
-});
+        let lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) return;
 
-// Bulk Import Logic
-bulkImportBtn.onclick = () => {
-    if (!currentUser) return showAuthModal();
-    bulkImportModal.style.display = 'flex';
-    importStatus.style.display = 'none';
-    bulkUrlsArea.value = '';
-};
+        startBulkImportBtn.disabled = true;
+        importStatus.style.display = 'block';
+        let importedCount = 0;
 
-closeBulkModal.onclick = () => {
-    bulkImportModal.style.display = 'none';
-};
+        // Detection: Is it a playlist?
+        if (lines.length === 1 && lines[0].includes('sets/')) {
+            importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
 
-startBulkImportBtn.onclick = async () => {
-    const text = bulkUrlsArea.value.trim();
-    if (!text) return alert('Por favor, pega algunos enlaces.');
+            try {
+                const apiPath = `/resolve?url=${encodeURIComponent(lines[0])}`;
+                const data = await fetchSCApi(apiPath);
 
-    let lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length === 0) return;
-
-    startBulkImportBtn.disabled = true;
-    importStatus.style.display = 'block';
-    let importedCount = 0;
-
-    // Detection: Is it a playlist?
-    if (lines.length === 1 && lines[0].includes('sets/')) {
-        importProgressText.textContent = `Resolviendo playlist de SoundCloud...`;
-
-        try {
-            const apiPath = `/resolve?url=${encodeURIComponent(lines[0])}`;
-            const data = await fetchSCApi(apiPath);
-
-            if (data && data.kind === 'playlist' && data.tracks) {
-                lines = data.tracks.map(t => t.permalink_url);
-                console.log(`Extraction successful: ${lines.length} songs found.`);
-            } else {
-                throw new Error("No se encontraron canciones o no es una playlist válida.");
-            }
-        } catch (e) {
-            alert("Error al extraer la playlist. Intenta asegurarte de que el enlace sea público.");
-            console.error("Playlist extraction error:", e);
-            startBulkImportBtn.disabled = false;
-            return;
-        }
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-        const url = lines[i];
-
-        importProgressText.textContent = `Procesando ${i + 1} de ${lines.length}...`;
-        importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
-
-        try {
-            const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
-            const trackData = await fetchSCApi(apiPath);
-            if (trackData && trackData.kind === 'track') {
-                const track = mapSCTrackToPurelyd(trackData);
-                const newSong = {
-                    id: Date.now() + Math.random(),
-                    title: track.title,
-                    artist: track.artist,
-                    url: track.url,
-                    cover: track.cover,
-                    type: 'soundcloud',
-                    durationMs: track.durationMs
-                };
-                await SongDB.addSong(newSong, currentUser.username);
-                importedCount++;
-            }
-        } catch (e) {
-            console.error("Error importing:", url, e);
-        }
-    }
-
-    alert(`¡Importación completada! Se añadieron ${importedCount} canciones.`);
-    startBulkImportBtn.disabled = false;
-    bulkImportModal.style.display = 'none';
-    await loadUserSongs();
-    renderSongs();
-};
-
-addSongBtn.onclick = () => {
-    if (!currentUser) return showAuthModal();
-    addSongModal.style.display = 'flex';
-};
-
-// Auto-fill SoundCloud Metadata
-const songUrlInput = document.getElementById('song-url');
-const songTitleInput = document.getElementById('song-title');
-const songArtistInput = document.getElementById('song-artist');
-const songCoverInput = document.getElementById('song-cover');
-
-songUrlInput.oninput = async () => {
-    const url = songUrlInput.value.trim();
-
-    if (url.includes('soundcloud.com')) {
-        console.log("Resolving SC metadata for:", url);
-        try {
-            const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
-            const trackData = await fetchSCApi(apiPath);
-            if (trackData && trackData.kind === 'track') {
-                const track = mapSCTrackToPurelyd(trackData);
-                songTitleInput.value = track.title;
-                songArtistInput.value = track.artist;
-                if (track.cover && track.cover.trim() !== "") {
-                    songCoverInput.value = track.cover;
+                if (data && data.kind === 'playlist' && data.tracks) {
+                    lines = data.tracks.map(t => t.permalink_url);
+                    console.log(`Extraction successful: ${lines.length} songs found.`);
+                } else {
+                    throw new Error("No se encontraron canciones o no es una playlist válida.");
                 }
-                console.log("Metadata auto-filled");
+            } catch (e) {
+                alert("Error al extraer la playlist. Intenta asegurarte de que el enlace sea público.");
+                console.error("Playlist extraction error:", e);
+                startBulkImportBtn.disabled = false;
+                return;
             }
-        } catch (e) {
-            console.warn("Failed to fetch SC metadata:", e);
         }
-    }
-};
 
-closeModal.onclick = () => {
-    addSongModal.style.display = 'none';
-    addSongForm.reset();
-};
+        for (let i = 0; i < lines.length; i++) {
+            const url = lines[i];
 
-userProfileBtn.onclick = (e) => {
-    e.stopPropagation();
-    if (!currentUser) {
-        showAuthModal();
-    } else {
-        userMenu.classList.toggle('active');
-    }
-};
+            importProgressText.textContent = `Procesando ${i + 1} de ${lines.length}...`;
+            importProgressBar.style.width = `${((i + 1) / lines.length) * 100}%`;
 
-logoutBtn.onclick = () => {
-    currentUser = null;
-    localStorage.removeItem('purelydsc-current-user');
-    userMenu.classList.remove('active');
-    init();
-};
-
-let isRegisterMode = false;
-function showAuthModal() {
-    isRegisterMode = false;
-    updateAuthModalUI();
-    authModal.style.display = 'flex';
-}
-
-function updateAuthModalUI() {
-    document.getElementById('auth-title').textContent = isRegisterMode ? 'Register' : 'Log In';
-    document.getElementById('auth-submit').textContent = isRegisterMode ? 'Register' : 'Log In';
-
-    // Use innerHTML to safely reconstruct the switch text and the span button
-    if (isRegisterMode) {
-        authSwitch.innerHTML = 'Already have an account? <span>Log In</span>';
-    } else {
-        authSwitch.innerHTML = "Don't have an account? <span>Register</span>";
-    }
-
-    // Toggle new fields
-    authConfirmPassword.style.display = isRegisterMode ? 'block' : 'none';
-    authConfirmPassword.required = isRegisterMode;
-}
-
-// Use event delegation for the switch since its innerHTML gets replaced
-authSwitch.onclick = (e) => {
-    if (e.target.tagName === 'SPAN') {
-        isRegisterMode = !isRegisterMode;
-        updateAuthModalUI();
-    }
-};
-
-closeAuth.onclick = () => authModal.style.display = 'none';
-
-authForm.onsubmit = async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('auth-username').value.trim();
-    const password = document.getElementById('auth-password').value.trim();
-    const confirmPassword = authConfirmPassword.value.trim();
-
-    console.log(`Auth attempt: ${isRegisterMode ? 'Register' : 'Login'} for ${username}`);
-
-    try {
-        if (isRegisterMode) {
-            if (password !== confirmPassword) {
-                return alert('Las contraseñas no coinciden.');
+            try {
+                const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
+                const trackData = await fetchSCApi(apiPath);
+                if (trackData && trackData.kind === 'track') {
+                    const track = mapSCTrackToPurelyd(trackData);
+                    const newSong = {
+                        id: Date.now() + Math.random(),
+                        title: track.title,
+                        artist: track.artist,
+                        url: track.url,
+                        cover: track.cover,
+                        type: 'soundcloud',
+                        durationMs: track.durationMs
+                    };
+                    await SongDB.addSong(newSong, currentUser.username);
+                    importedCount++;
+                }
+            } catch (e) {
+                console.error("Error importing:", url, e);
             }
-            if (await UserDB.getUser(username)) {
-                return alert('Ese nombre de usuario ya existe.');
+        }
+
+        alert(`¡Importación completada! Se añadieron ${importedCount} canciones.`);
+        startBulkImportBtn.disabled = false;
+        bulkImportModal.style.display = 'none';
+        await loadUserSongs();
+        renderSongs();
+    };
+
+    addSongBtn.onclick = () => {
+        if (!currentUser) return showAuthModal();
+        addSongModal.style.display = 'flex';
+    };
+
+    // Auto-fill SoundCloud Metadata
+    const songUrlInput = document.getElementById('song-url');
+    const songTitleInput = document.getElementById('song-title');
+    const songArtistInput = document.getElementById('song-artist');
+    const songCoverInput = document.getElementById('song-cover');
+
+    songUrlInput.oninput = async () => {
+        const url = songUrlInput.value.trim();
+
+        if (url.includes('soundcloud.com')) {
+            console.log("Resolving SC metadata for:", url);
+            try {
+                const apiPath = `/resolve?url=${encodeURIComponent(url)}`;
+                const trackData = await fetchSCApi(apiPath);
+                if (trackData && trackData.kind === 'track') {
+                    const track = mapSCTrackToPurelyd(trackData);
+                    songTitleInput.value = track.title;
+                    songArtistInput.value = track.artist;
+                    if (track.cover && track.cover.trim() !== "") {
+                        songCoverInput.value = track.cover;
+                    }
+                    console.log("Metadata auto-filled");
+                }
+            } catch (e) {
+                console.warn("Failed to fetch SC metadata:", e);
             }
+        }
+    };
 
-            // Temporary user object to start onboarding
-            const newUser = { username, password, genres: [] };
-            await UserDB.addUser(newUser);
-            users = await UserDB.getAllUsers();
-            currentUser = newUser;
+    closeModal.onclick = () => {
+        addSongModal.style.display = 'none';
+        addSongForm.reset();
+    };
 
-            authModal.style.display = 'none';
-            authForm.reset();
-            showGenreSelection();
+    userProfileBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!currentUser) {
+            showAuthModal();
         } else {
-            const user = await UserDB.getUser(username);
-            if (!user || user.password !== password) {
-                console.warn("Invalid credentials");
-                return alert('Usuario o contraseña incorrectos.');
-            }
-            currentUser = user;
-            localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
-            authModal.style.display = 'none';
-            authForm.reset();
-            await init();
+            userMenu.classList.toggle('active');
         }
-    } catch (err) {
-        console.error("Auth Error:", err);
-        alert(`Error inesperado durante la autenticación:\n\n${err.message || err.details || err}\n\nPor favor, contacta con soporte o revisa la consola.`);
+    };
+
+    logoutBtn.onclick = () => {
+        currentUser = null;
+        localStorage.removeItem('purelydsc-current-user');
+        userMenu.classList.remove('active');
+        init();
+    };
+
+    let isRegisterMode = false;
+    function showAuthModal() {
+        isRegisterMode = false;
+        updateAuthModalUI();
+        authModal.style.display = 'flex';
     }
-};
 
-const MUSIC_GENRES = ['Pop', 'Rock', 'Electronic', 'Hip Hop', 'Jazz', 'Classical', 'Reggaeton', 'Indie', 'Metal', 'Lo-fi', 'R&B', 'Country'];
-let selectedGenres = [];
+    function updateAuthModalUI() {
+        document.getElementById('auth-title').textContent = isRegisterMode ? 'Register' : 'Log In';
+        document.getElementById('auth-submit').textContent = isRegisterMode ? 'Register' : 'Log In';
 
-function showGenreSelection() {
-    selectedGenres = [];
-    genreGrid.innerHTML = MUSIC_GENRES.map(genre => `
+        // Use innerHTML to safely reconstruct the switch text and the span button
+        if (isRegisterMode) {
+            authSwitch.innerHTML = 'Already have an account? <span>Log In</span>';
+        } else {
+            authSwitch.innerHTML = "Don't have an account? <span>Register</span>";
+        }
+
+        // Toggle new fields
+        authConfirmPassword.style.display = isRegisterMode ? 'block' : 'none';
+        authConfirmPassword.required = isRegisterMode;
+    }
+
+    // Use event delegation for the switch since its innerHTML gets replaced
+    authSwitch.onclick = (e) => {
+        if (e.target.tagName === 'SPAN') {
+            isRegisterMode = !isRegisterMode;
+            updateAuthModalUI();
+        }
+    };
+
+    closeAuth.onclick = () => authModal.style.display = 'none';
+
+    authForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('auth-username').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        const confirmPassword = authConfirmPassword.value.trim();
+
+        console.log(`Auth attempt: ${isRegisterMode ? 'Register' : 'Login'} for ${username}`);
+
+        try {
+            if (isRegisterMode) {
+                if (password !== confirmPassword) {
+                    return alert('Las contraseñas no coinciden.');
+                }
+                if (await UserDB.getUser(username)) {
+                    return alert('Ese nombre de usuario ya existe.');
+                }
+
+                // Temporary user object to start onboarding
+                const newUser = { username, password, genres: [] };
+                await UserDB.addUser(newUser);
+                users = await UserDB.getAllUsers();
+                currentUser = newUser;
+
+                authModal.style.display = 'none';
+                authForm.reset();
+                showGenreSelection();
+            } else {
+                const user = await UserDB.getUser(username);
+                if (!user || user.password !== password) {
+                    console.warn("Invalid credentials");
+                    return alert('Usuario o contraseña incorrectos.');
+                }
+                currentUser = user;
+                localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+                authModal.style.display = 'none';
+                authForm.reset();
+                await init();
+            }
+        } catch (err) {
+            console.error("Auth Error:", err);
+            alert(`Error inesperado durante la autenticación:\n\n${err.message || err.details || err}\n\nPor favor, contacta con soporte o revisa la consola.`);
+        }
+    };
+
+    const MUSIC_GENRES = ['Pop', 'Rock', 'Electronic', 'Hip Hop', 'Jazz', 'Classical', 'Reggaeton', 'Indie', 'Metal', 'Lo-fi', 'R&B', 'Country'];
+    let selectedGenres = [];
+
+    function showGenreSelection() {
+        selectedGenres = [];
+        genreGrid.innerHTML = MUSIC_GENRES.map(genre => `
             <div class="genre-chip" data-genre="${genre}">${genre}</div>
         `).join('');
 
-    document.querySelectorAll('.genre-chip').forEach(chip => {
-        chip.onclick = () => {
-            const genre = chip.dataset.genre;
-            if (selectedGenres.includes(genre)) {
-                selectedGenres = selectedGenres.filter(g => g !== genre);
-                chip.classList.remove('selected');
-            } else if (selectedGenres.length < 3) {
-                selectedGenres.push(genre);
-                chip.classList.add('selected');
-            } else {
-                alert('Solo puedes elegir hasta 3 gï¿½neros.');
-            }
-        };
-    });
+        document.querySelectorAll('.genre-chip').forEach(chip => {
+            chip.onclick = () => {
+                const genre = chip.dataset.genre;
+                if (selectedGenres.includes(genre)) {
+                    selectedGenres = selectedGenres.filter(g => g !== genre);
+                    chip.classList.remove('selected');
+                } else if (selectedGenres.length < 3) {
+                    selectedGenres.push(genre);
+                    chip.classList.add('selected');
+                } else {
+                    alert('Solo puedes elegir hasta 3 gï¿½neros.');
+                }
+            };
+        });
 
-    genreModal.style.display = 'flex';
-}
-
-saveGenresBtn.onclick = async () => {
-    if (selectedGenres.length === 0) {
-        return alert('Por favor, elige al menos un gï¿½nero.');
+        genreModal.style.display = 'flex';
     }
 
-    currentUser.genres = selectedGenres;
-    // Update user in DB
-    await UserDB.updateUser(currentUser);
+    saveGenresBtn.onclick = async () => {
+        if (selectedGenres.length === 0) {
+            return alert('Por favor, elige al menos un gï¿½nero.');
+        }
 
-    localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
-    genreModal.style.display = 'none';
-    await init();
-};
+        currentUser.genres = selectedGenres;
+        // Update user in DB
+        await UserDB.updateUser(currentUser);
 
-addSongForm.onsubmit = async (e) => {
-    e.preventDefault();
-    const url = document.getElementById('song-url').value;
-    const scId = getSCId(url);
-
-    const songData = {
-        title: document.getElementById('song-title').value,
-        artist: document.getElementById('song-artist').value,
-        url: url,
-        cover: document.getElementById('song-cover').value,
-        type: scId ? 'soundcloud' : 'audio'
+        localStorage.setItem('purelydsc-current-user', JSON.stringify(currentUser));
+        genreModal.style.display = 'none';
+        await init();
     };
 
-    if (editingSongId) {
-        const index = songs.findIndex(s => s.id === editingSongId);
-        if (index !== -1) {
-            const updatedSong = { ...songs[index], ...songData };
-            await SongDB.updateSong(updatedSong);
-        }
-        editingSongId = null;
-    } else {
-        const newSong = {
-            id: Date.now(),
-            ...songData
+    addSongForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const url = document.getElementById('song-url').value;
+        const scId = getSCId(url);
+
+        const songData = {
+            title: document.getElementById('song-title').value,
+            artist: document.getElementById('song-artist').value,
+            url: url,
+            cover: document.getElementById('song-cover').value,
+            type: scId ? 'soundcloud' : 'audio'
         };
-        await SongDB.addSong(newSong, currentUser.username);
-    }
 
-    await loadUserSongs();
-    renderSongs();
-    addSongModal.style.display = 'none';
-    addSongForm.reset();
-    document.querySelector('#add-song-modal h2').textContent = 'Add New Song';
-};
+        if (editingSongId) {
+            const index = songs.findIndex(s => s.id === editingSongId);
+            if (index !== -1) {
+                const updatedSong = { ...songs[index], ...songData };
+                await SongDB.updateSong(updatedSong);
+            }
+            editingSongId = null;
+        } else {
+            const newSong = {
+                id: Date.now(),
+                ...songData
+            };
+            await SongDB.addSong(newSong, currentUser.username);
+        }
 
-playPauseBtn.onclick = togglePlay;
+        await loadUserSongs();
+        renderSongs();
+        addSongModal.style.display = 'none';
+        addSongForm.reset();
+        document.querySelector('#add-song-modal h2').textContent = 'Add New Song';
+    };
 
-// Shared Room Events
-joinRoomBtn.onclick = () => {
-    if (currentUser) {
-        if (confirm("¿Quieres crear una sala nueva? Si pulsas 'Cancelar' podrás unirte a una existente.")) {
-            RealtimeManager.createRoom();
+    playPauseBtn.onclick = togglePlay;
+
+    // Shared Room Events
+    joinRoomBtn.onclick = () => {
+        if (currentUser) {
+            if (confirm("¿Quieres crear una sala nueva? Si pulsas 'Cancelar' podrás unirte a una existente.")) {
+                RealtimeManager.createRoom();
+            } else {
+                RealtimeManager.joinPrompt();
+            }
         } else {
             RealtimeManager.joinPrompt();
         }
-    } else {
-        RealtimeManager.joinPrompt();
-    }
-};
-leaveRoomBtn.onclick = () => RealtimeManager.leaveRoom();
-copyRoomBtn.onclick = () => {
-    navigator.clipboard.writeText(currentRoom);
-    alert(`ID de sala ${currentRoom} copiado al portapapeles!`);
-};
-
-progressBar.onmousedown = () => isDraggingProgress = true;
-progressBar.ontouchstart = () => isDraggingProgress = true;
-
-progressBar.onchange = () => {
-    const audioElement = document.getElementById('audio-element');
-    if (audioElement && audioElement.duration > 0) {
-        const newTime = (progressBar.value / 100) * audioElement.duration;
-        audioElement.currentTime = newTime;
-    }
-    isDraggingProgress = false;
-};
-
-progressBar.onmouseup = () => isDraggingProgress = false;
-progressBar.ontouchend = () => isDraggingProgress = false;
-
-// Remove the old oninput logic because it fires continuously while dragging
-// and fights with ontimeupdate. onchange fires when drag completes.
-
-
-volumeSlider.oninput = () => {
-    const vol = volumeSlider.value;
-    const audioElement = document.getElementById('audio-element');
-    if (audioElement) {
-        audioElement.volume = vol / 100;
-    }
-};
-
-window.onclick = (e) => {
-    // 1. Modal handling
-    if (e.target == addSongModal) {
-        addSongModal.style.display = 'none';
-        editingSongId = null;
-        addSongForm.reset();
-    }
-    if (e.target == authModal) {
-        authModal.style.display = 'none';
-    }
-
-    // 2. Context Menu handling
-    if (!e.target.closest('.options-btn') && !e.target.closest('.context-menu')) {
-        hideMenu();
-    }
-
-    // 3. User Menu handling
-    if (!e.target.closest('.user-profile')) {
-        userMenu.classList.remove('active');
-    }
-};
-
-// Context Menu Event Listeners
-document.getElementById('menu-delete').onclick = async () => {
-    if (menuTargetIndex !== null) {
-        await deleteSongById(songs[menuTargetIndex].id);
-        hideMenu();
-    }
-};
-
-document.getElementById('menu-edit').onclick = () => {
-    if (menuTargetIndex !== null) {
-        openEditModal(menuTargetIndex);
-        hideMenu();
-    }
-};
-
-document.getElementById('next-btn').onclick = nextSong;
-document.getElementById('prev-btn').onclick = prevSong;
-
-// Setup Local Audio Element as THE ONLY ENGINE
-const audioElement = document.getElementById('audio-element');
-// Para móvil, asegurarnos de que el audio puede reproducirse cross-origin
-if (audioElement) {
-    audioElement.onplay = () => {
-        isPlaying = true;
-        userWantsToPlay = true;
-        playPauseBtn.textContent = '⏸';
-        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-        startKeepAlive();
     };
-    audioElement.onpause = () => {
-        isPlaying = false;
-        playPauseBtn.textContent = '▶';
-        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-        stopKeepAlive();
+    leaveRoomBtn.onclick = () => RealtimeManager.leaveRoom();
+    copyRoomBtn.onclick = () => {
+        navigator.clipboard.writeText(currentRoom);
+        alert(`ID de sala ${currentRoom} copiado al portapapeles!`);
     };
-    audioElement.onended = () => nextSong();
-    audioElement.ontimeupdate = () => {
-        if (audioElement.duration > 0) {
-            // UI Updates (only if not scrubbing manually)
-            if (!isDraggingProgress) {
-                progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
-                currentTimeEl.textContent = formatTime(audioElement.currentTime);
-            }
-            totalTimeEl.textContent = formatTime(audioElement.duration);
 
-            // MediaSession Throttling for native audio
-            const now = Date.now();
-            if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
-                try {
-                    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-                        navigator.mediaSession.setPositionState({
-                            duration: audioElement.duration,
-                            playbackRate: 1,
-                            position: audioElement.currentTime
-                        });
-                    }
-                    window._lastMSUpdate = now;
-                } catch (e) { }
-            }
+    progressBar.onmousedown = () => isDraggingProgress = true;
+    progressBar.ontouchstart = () => isDraggingProgress = true;
+
+    progressBar.onchange = () => {
+        const audioElement = document.getElementById('audio-element');
+        if (audioElement && audioElement.duration > 0) {
+            const newTime = (progressBar.value / 100) * audioElement.duration;
+            audioElement.currentTime = newTime;
+        }
+        isDraggingProgress = false;
+    };
+
+    progressBar.onmouseup = () => isDraggingProgress = false;
+    progressBar.ontouchend = () => isDraggingProgress = false;
+
+    // Remove the old oninput logic because it fires continuously while dragging
+    // and fights with ontimeupdate. onchange fires when drag completes.
+
+
+    volumeSlider.oninput = () => {
+        const vol = volumeSlider.value;
+        const audioElement = document.getElementById('audio-element');
+        if (audioElement) {
+            audioElement.volume = vol / 100;
         }
     };
+
+    window.onclick = (e) => {
+        // 1. Modal handling
+        if (e.target == addSongModal) {
+            addSongModal.style.display = 'none';
+            editingSongId = null;
+            addSongForm.reset();
+        }
+        if (e.target == authModal) {
+            authModal.style.display = 'none';
+        }
+
+        // 2. Context Menu handling
+        if (!e.target.closest('.options-btn') && !e.target.closest('.context-menu')) {
+            hideMenu();
+        }
+
+        // 3. User Menu handling
+        if (!e.target.closest('.user-profile')) {
+            userMenu.classList.remove('active');
+        }
+    };
+
+    // Context Menu Event Listeners
+    document.getElementById('menu-delete').onclick = async () => {
+        if (menuTargetIndex !== null) {
+            await deleteSongById(songs[menuTargetIndex].id);
+            hideMenu();
+        }
+    };
+
+    document.getElementById('menu-edit').onclick = () => {
+        if (menuTargetIndex !== null) {
+            openEditModal(menuTargetIndex);
+            hideMenu();
+        }
+    };
+
+    document.getElementById('next-btn').onclick = nextSong;
+    document.getElementById('prev-btn').onclick = prevSong;
+
+    // Setup Local Audio Element as THE ONLY ENGINE
+    const audioElement = document.getElementById('audio-element');
+    // Para móvil, asegurarnos de que el audio puede reproducirse cross-origin
+    if (audioElement) {
+        audioElement.onplay = () => {
+            isPlaying = true;
+            userWantsToPlay = true;
+            playPauseBtn.textContent = '⏸';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            startKeepAlive();
+        };
+        audioElement.onpause = () => {
+            isPlaying = false;
+            playPauseBtn.textContent = '▶';
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            stopKeepAlive();
+        };
+        audioElement.onended = () => nextSong();
+        audioElement.ontimeupdate = () => {
+            if (audioElement.duration > 0) {
+                // UI Updates (only if not scrubbing manually)
+                if (!isDraggingProgress) {
+                    progressBar.value = (audioElement.currentTime / audioElement.duration) * 100;
+                    currentTimeEl.textContent = formatTime(audioElement.currentTime);
+                }
+                totalTimeEl.textContent = formatTime(audioElement.duration);
+
+                // MediaSession Throttling for native audio
+                const now = Date.now();
+                if (!window._lastMSUpdate || now - window._lastMSUpdate > 2000) {
+                    try {
+                        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                            navigator.mediaSession.setPositionState({
+                                duration: audioElement.duration,
+                                playbackRate: 1,
+                                position: audioElement.currentTime
+                            });
+                        }
+                        window._lastMSUpdate = now;
+                    } catch (e) { }
+                }
+            }
+        };
+    }
 }
 
 let menuTargetIndex = null;
