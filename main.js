@@ -228,19 +228,16 @@ const RealtimeManager = {
             copyRoomBtn.style.display = 'inline-block';
             leaveRoomBtn.style.display = 'inline-block';
             joinRoomBtn.style.display = 'none';
-            if (navShared) {
-                navShared.style.display = 'block';
-                navShared.click(); // Force view switch
-            }
-            if (mobNavShared) mobNavShared.style.display = 'block';
+            if (navShared) navShared.classList.add('active-room');
+            if (mobNavShared) mobNavShared.classList.add('active-room');
         } else {
             sharedRoomID.textContent = "---";
             roomStatusEl.textContent = "Sin sala activa";
             joinRoomBtn.style.display = 'inline-block';
             copyRoomBtn.style.display = 'none';
             leaveRoomBtn.style.display = 'none';
-            if (navShared) navShared.style.display = 'none';
-            if (mobNavShared) mobNavShared.style.display = 'none';
+            if (navShared) navShared.classList.remove('active-room');
+            if (mobNavShared) mobNavShared.classList.remove('active-room');
         }
     }
 };
@@ -433,17 +430,31 @@ function renderSongs() {
 
     // Shared View content injection
     if (currentPlaylistId === 'shared') {
-        songGrid.innerHTML = `
-            <div class="shared-view-container" style="grid-column: 1 / -1; background: rgba(255,255,255,0.02); border-radius: 20px; padding: 40px; text-align: center; border: 1px dashed rgba(255,255,255,0.1);">
-                <div style="font-size: 3rem; margin-bottom: 20px;">🔴</div>
-                <h2 style="margin-bottom: 10px;">ID DE SALA: <span style="color: var(--accent-red); font-family: monospace;">${currentRoom}</span></h2>
-                <p style="color: var(--text-secondary); margin-bottom: 30px;">${isHost ? 'Estás emitiendo tu música para otros oyentes.' : 'Estas escuchando en vivo lo que reproduce el host.'}</p>
-                <div style="display: flex; justify-content: center; gap: 20px;">
-                    <button class="btn-new-playlist" onclick="RealtimeManager.leaveRoom()" style="width: auto; background: #444;">Salir de la sala</button>
-                    <button class="btn-new-playlist" onclick="copyRoomBtn.click()" style="width: auto;">Copiar ID para invitar</button>
+        if (!currentRoom) {
+            songGrid.innerHTML = `
+                <div class="shared-view-container" style="grid-column: 1 / -1; background: rgba(255,255,255,0.02); border-radius: 20px; padding: 40px; text-align: center; border: 1px dashed rgba(255,255,255,0.1);">
+                    <div style="font-size: 3rem; margin-bottom: 20px;">🔊</div>
+                    <h2 style="margin-bottom: 10px;">Escucha Compartida</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 30px;">Escucha música sincronizada con tus amigos en tiempo real.</p>
+                    <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+                        <button class="btn-new-playlist" onclick="RealtimeManager.createRoom()" style="width: auto; padding: 12px 24px; background: var(--accent-red);">Crear Sala Nueva</button>
+                        <button class="btn-new-playlist" onclick="RealtimeManager.joinPrompt()" style="width: auto; padding: 12px 24px; background: #444;">Unirse a una Sala</button>
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            songGrid.innerHTML = `
+                <div class="shared-view-container" style="grid-column: 1 / -1; background: rgba(255,255,255,0.02); border-radius: 20px; padding: 40px; text-align: center; border: 1px dashed rgba(255,255,255,0.1);">
+                    <div style="font-size: 3rem; margin-bottom: 20px;">🔴</div>
+                    <h2 style="margin-bottom: 10px;">SALA ACTIVA: <span style="color: var(--accent-red); font-family: monospace;">${currentRoom}</span></h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 30px;">${isHost ? 'Estás emitiendo tu música para otros oyentes.' : 'Estas escuchando en vivo lo que reproduce el host.'}</p>
+                    <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+                        <button class="btn-new-playlist" onclick="RealtimeManager.leaveRoom()" style="width: auto; padding: 12px 24px; background: #444;">Salir de la sala</button>
+                        <button class="btn-new-playlist" onclick="copyRoomBtn.click()" style="width: auto; padding: 12px 24px;">Copiar ID para invitar</button>
+                    </div>
+                </div>
+            `;
+        }
         return;
     }
 
@@ -995,7 +1006,6 @@ function setupEventListeners() {
     if (navShared) {
         navShared.onclick = (e) => {
             if (e) e.preventDefault();
-            if (!currentRoom) return;
             currentPlaylistId = 'shared';
             navShared.classList.add('active');
             navHome.classList.remove('active');

@@ -99,6 +99,11 @@ body {
     background: var(--card-hover);
 }
 
+.active-room {
+    border-left: 3px solid var(--accent-red) !important;
+    background: rgba(255, 102, 0, 0.05) !important;
+}
+
 .btn-new-playlist {
     background: var(--card-hover);
     color: var(--text-primary);
