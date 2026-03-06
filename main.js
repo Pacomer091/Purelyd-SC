@@ -231,6 +231,7 @@ const RealtimeManager = {
                 navShared.style.display = 'block';
                 navShared.click(); // Force view switch
             }
+            if (mobNavShared) mobNavShared.style.display = 'block';
         } else {
             sharedRoomID.textContent = "---";
             roomStatusEl.textContent = "Sin sala activa";
@@ -238,6 +239,7 @@ const RealtimeManager = {
             copyRoomBtn.style.display = 'none';
             leaveRoomBtn.style.display = 'none';
             if (navShared) navShared.style.display = 'none';
+            if (mobNavShared) mobNavShared.style.display = 'none';
         }
     }
 };
@@ -291,6 +293,7 @@ const mobNewPlaylist = document.getElementById('mob-new-playlist');
 const mobNavUploads = document.getElementById('mob-nav-uploads');
 const mobNavFavorites = document.getElementById('mob-nav-favorites');
 const mobNavPlaylists = document.getElementById('mob-nav-playlists');
+const mobNavShared = document.getElementById('mob-nav-shared');
 
 function setStatus(msg) {
     if (playerStatus) playerStatus.textContent = `Player: ${msg}`;
@@ -819,6 +822,13 @@ function setupEventListeners() {
         navFavorites.click();
         mobileLibOverlay.classList.remove('active');
     };
+
+    if (mobNavShared) {
+        mobNavShared.onclick = () => {
+            navShared.click();
+            mobileLibOverlay.classList.remove('active');
+        };
+    }
 
     mobNavPlaylists.onclick = async () => {
         mobileLibOverlay.classList.remove('active');
