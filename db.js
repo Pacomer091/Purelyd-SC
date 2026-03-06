@@ -17,8 +17,18 @@ const UserDB = {
     async addUser(user) {
         // Sanitize object for Supabase to prevent schema cache errors with extra properties
         // Generate a UUID locally in case the live Supabase SQL schema is missing the uuid_generate_v4() default
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            // Fallback for older WebViews
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        };
         const dbUser = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             username: user.username,
             password: user.password,
             favorites: user.favorites || []

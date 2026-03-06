@@ -116,6 +116,24 @@ const roomStatusEl = document.getElementById('room-status');
 
 // Realtime Manager Logic
 const RealtimeManager = {
+    init() {
+        // Handle custom join modal
+        const confirmBtn = document.getElementById('confirm-join-btn');
+        const joinInput = document.getElementById('join-room-input');
+        const joinModal = document.getElementById('join-room-modal');
+
+        if (confirmBtn) {
+            confirmBtn.onclick = () => {
+                const id = joinInput.value.toUpperCase().trim();
+                if (id) {
+                    this.joinRoom(id, false);
+                    joinModal.style.display = 'none';
+                    joinInput.value = '';
+                }
+            };
+        }
+    },
+
     async createRoom() {
         if (!currentUser) return this.joinPrompt();
         try {
@@ -128,8 +146,16 @@ const RealtimeManager = {
     },
 
     joinPrompt() {
-        const id = prompt("Introduce el ID de la sala:");
-        if (id) this.joinRoom(id.toUpperCase().trim(), false);
+        const joinModal = document.getElementById('join-room-modal');
+        if (joinModal) {
+            joinModal.style.display = 'flex';
+            const input = document.getElementById('join-room-input');
+            if (input) input.focus();
+        } else {
+            // Fallback fallback
+            const id = prompt("Introduce el ID de la sala:");
+            if (id) this.joinRoom(id.toUpperCase().trim(), false);
+        }
     },
 
     joinRoom(roomId, asHost = false) {
@@ -241,6 +267,10 @@ const RealtimeManager = {
         }
     }
 };
+
+// Make RealtimeManager accessible from HTML onclick attributes
+window.RealtimeManager = RealtimeManager;
+RealtimeManager.init();
 const progressBar = document.getElementById('progress-bar');
 const currentTimeEl = document.querySelector('.current-time');
 const totalTimeEl = document.querySelector('.total-time');

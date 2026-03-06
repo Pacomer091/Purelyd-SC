@@ -287,6 +287,20 @@
 
     <audio id="audio-element"></audio>
     <audio id="silent-audio" loop style="display:none;"></audio>
+    <!-- Join Room Modal -->
+    <div id="join-room-modal" class="modal">
+        <div class="modal-content">
+            <h2>Unirse a una Sala</h2>
+            <p>Introduce el ID de la sala para sincronizar la música.</p>
+            <input type="text" id="join-room-input" placeholder="Ej: A1B2C3" style="text-transform: uppercase;">
+            <div class="modal-buttons">
+                <button class="btn-cancel"
+                    onclick="document.getElementById('join-room-modal').style.display='none'">Cancelar</button>
+                <button class="btn-save" id="confirm-join-btn">Unirse</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Context Menu -->
     <div id="context-menu" class="context-menu">
         <div class="context-menu-item" id="menu-play">Reproducir</div>
@@ -297,8 +311,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="db.js?v=1002-PERMANENT-SHARED"></script>
-    <script src="main.js?v=1002-PERMANENT-SHARED"></script>
+    <script src="db.js?v=1003-MOBILE-ROBUST"></script>
+    <script src="main.js?v=1003-MOBILE-ROBUST"></script>
 </body>
 
 
