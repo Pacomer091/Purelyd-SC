@@ -460,6 +460,15 @@ function renderSongs() {
         `).join('');
 
         songGrid.innerHTML = `
+            ${currentRoom ? `
+            <div class="song-card home-action-card" id="home-shared" style="cursor:pointer; border: 2px solid var(--accent-red); background: rgba(255, 0, 51, 0.05);">
+                <div class="song-cover" style="background: linear-gradient(135deg, #FF0033, #FF6600); display:flex; align-items:center; justify-content:center; font-size:3rem;">🔴</div>
+                <div class="song-info">
+                    <div class="song-title" style="font-size:1rem; font-weight:700;">Sala Activa</div>
+                    <div class="song-artist">ID: ${currentRoom}</div>
+                </div>
+            </div>
+            ` : ''}
             <div class="song-card home-action-card" id="home-random" style="cursor:pointer;">
                 <div class="song-cover" style="background: linear-gradient(135deg, #1DB954, #1ed760); display:flex; align-items:center; justify-content:center; font-size:3rem;">🎲</div>
                 <div class="song-info">
@@ -484,6 +493,12 @@ function renderSongs() {
             </div>
             ${playlistCards}
         `;
+
+        if (currentRoom && document.getElementById("home-shared")) {
+            document.getElementById("home-shared").onclick = () => {
+                if (navShared) navShared.click();
+            };
+        }
 
         // Build recommended section HTML
         let recoSection = "";
